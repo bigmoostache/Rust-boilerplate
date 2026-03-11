@@ -22,9 +22,14 @@ COMMANDS:
     infer    Run inference on a patient graph
 
 INFER OPTIONS:
-    -i, --input <PATH>     Path to the input YAML graph definition (required)
+    -i, --input <PATH>     Path to a YAML input file (repeatable, merged in order)
     -o, --output <PATH>    Path to write the output YAML (defaults to stdout)
     -h, --help             Show this help message
+
+EXAMPLES:
+    app infer -i graph.yaml                              # single file
+    app infer -i nodes.yaml -i edges.yaml -i patient.yaml  # merged files
+    app infer -i nodes.yaml -i patient.yaml -o result.yaml  # with output file
 ";
     let mut stdout = std::io::stdout().lock();
     let _r = stdout.write_all(msg.as_bytes());
@@ -35,8 +40,8 @@ INFER OPTIONS:
 enum Command {
     /// Run inference with given input/output paths.
     Infer {
-        /// Input YAML path.
-        input: String,
+        /// Input YAML paths (merged in order).
+        inputs: Vec<String>,
         /// Optional output YAML path.
         output: Option<String>,
     },
@@ -57,7 +62,7 @@ fn parse_args() -> Option<Command> {
 
     if subcommand == "infer" {
         let rest = args.get(1..).unwrap_or_default();
-        let mut input: Option<String> = None;
+        let mut inputs: Vec<String> = Vec::new();
         let mut output: Option<String> = None;
         let mut i = 0;
         while i < rest.len() {
@@ -65,7 +70,9 @@ fn parse_args() -> Option<Command> {
             match arg.as_str() {
                 "-i" | "--input" => {
                     i = i.checked_add(1)?;
-                    input = rest.get(i).cloned();
+                    if let Some(path) = rest.get(i) {
+                        inputs.push(path.clone());
+                    }
                 }
                 "-o" | "--output" => {
                     i = i.checked_add(1)?;
@@ -85,14 +92,14 @@ fn parse_args() -> Option<Command> {
             i = i.checked_add(1)?;
         }
 
-        let input = input.or_else(|| {
+        if inputs.is_empty() {
             let mut stderr = std::io::stderr().lock();
-            let _r = writeln!(stderr, "error: --input is required");
+            let _r = writeln!(stderr, "error: at least one --input is required");
             print_usage();
-            None
-        })?;
+            return None;
+        }
 
-        Some(Command::Infer { input, output })
+        Some(Command::Infer { inputs, output })
     } else if subcommand == "-h" || subcommand == "--help" {
         print_usage();
         None
@@ -115,19 +122,24 @@ fn main() -> anyhow::Result<()> {
     };
 
     match command {
-        Command::Infer { input, output } => run_infer(&input, output.as_deref()),
+        Command::Infer { inputs, output } => run_infer(&inputs, output.as_deref()),
     }
 }
 
 /// Execute the `infer` subcommand.
-fn run_infer(input_path: &str, output_path: Option<&str>) -> anyhow::Result<()> {
-    // Read input YAML
-    let yaml = std::fs::read_to_string(input_path)
-        .with_context(|| format!("failed to read input file: {input_path}"))?;
+fn run_infer(input_paths: &[String], output_path: Option<&str>) -> anyhow::Result<()> {
+    // Read all input YAMLs
+    let mut yamls: Vec<String> = Vec::with_capacity(input_paths.len());
+    for path in input_paths {
+        let yaml = std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read input file: {path}"))?;
+        yamls.push(yaml);
+    }
 
-    // Parse and validate
-    let config =
-        app_core::schema::validate::parse_yaml(&yaml).map_err(|errs| anyhow::anyhow!("{errs}"))?;
+    // Parse and validate (merge multiple files)
+    let yaml_refs: Vec<&str> = yamls.iter().map(String::as_str).collect();
+    let config = app_core::schema::validate::parse_yamls(&yaml_refs)
+        .map_err(|errs| anyhow::anyhow!("{errs}"))?;
 
     // Apply temporal relaxation
     let mut graph = config.graph;

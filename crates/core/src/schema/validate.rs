@@ -62,6 +62,46 @@ pub fn parse_yaml(yaml: &str) -> Result<ValidatedConfig, SchemaErrors> {
     validate_and_build(&raw)
 }
 
+/// Parse multiple YAML strings and merge them into a single validated
+/// configuration.
+///
+/// Files are merged in order: `nodes`, `edges`, and `observations`
+/// lists are appended; `inference` is overridden by the last file
+/// that provides it.
+///
+/// # Errors
+///
+/// Returns [`SchemaErrors`] if any file is malformed or the merged
+/// result fails validation.
+pub fn parse_yamls(yamls: &[&str]) -> Result<ValidatedConfig, SchemaErrors> {
+    let mut merged: Option<GraphConfig> = None;
+
+    for (i, yaml) in yamls.iter().enumerate() {
+        let raw: GraphConfig = serde_yaml::from_str(yaml).map_err(|err| SchemaErrors {
+            errors: vec![SchemaError {
+                path: format!("file[{i}]"),
+                message: format!("YAML parse error: {err}"),
+            }],
+        })?;
+        if let Some(ref mut m) = merged {
+            m.merge(raw);
+        } else {
+            merged = Some(raw);
+        }
+    }
+
+    let Some(config) = merged else {
+        return Err(SchemaErrors {
+            errors: vec![SchemaError {
+                path: String::new(),
+                message: "no input files provided".to_owned(),
+            }],
+        });
+    };
+
+    validate_and_build(&config)
+}
+
 // ---------------------------------------------------------------------------
 // Validation + construction
 // ---------------------------------------------------------------------------
@@ -192,16 +232,24 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
     }
 
     // ── Validate inference config ───────────────────────────────
-    if raw.inference.tolerance <= 0.0 {
+    let Some(inference) = &raw.inference else {
+        errors.push(SchemaError {
+            path: "inference".to_owned(),
+            message: "inference settings are required (provide in at least one file)".to_owned(),
+        });
+        return Err(SchemaErrors { errors });
+    };
+
+    if inference.tolerance <= 0.0 {
         errors.push(SchemaError {
             path: "inference.tolerance".to_owned(),
-            message: format!("tolerance must be > 0, got {}", raw.inference.tolerance),
+            message: format!("tolerance must be > 0, got {}", inference.tolerance),
         });
     }
-    if raw.inference.delta_t < 0.0 {
+    if inference.delta_t < 0.0 {
         errors.push(SchemaError {
             path: "inference.delta_t".to_owned(),
-            message: format!("delta_t must be >= 0, got {}", raw.inference.delta_t),
+            message: format!("delta_t must be >= 0, got {}", inference.delta_t),
         });
     }
 
@@ -215,9 +263,9 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
 
     Ok(ValidatedConfig {
         graph,
-        max_iter: raw.inference.max_iter,
-        tolerance: raw.inference.tolerance,
-        delta_t: raw.inference.delta_t,
+        max_iter: inference.max_iter,
+        tolerance: inference.tolerance,
+        delta_t: inference.delta_t,
     })
 }
 

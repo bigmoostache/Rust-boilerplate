@@ -1,0 +1,50 @@
+# Grippe vs. Angine — node definitions
+#
+# Clinical variables (symptoms) and disease variables
+# shared across all patients.
+
+nodes:
+  # -- Clinical variables (symptoms) --
+  - id: 0
+    name: "temperature"
+    family:
+      type: gaussian
+      mu: 37.0
+      sigma2: 0.25
+    tau: 7.0
+
+  - id: 1
+    name: "headache"
+    family:
+      type: bernoulli
+      p: 0.1
+    tau: 3.0
+
+  - id: 2
+    name: "sore_throat"
+    family:
+      type: bernoulli
+      p: 0.05
+    tau: 5.0
+
+  - id: 3
+    name: "body_aches"
+    family:
+      type: bernoulli
+      p: 0.05
+    tau: 3.0
+
+  # -- Disease variables --
+  - id: 4
+    name: "flu"
+    family:
+      type: bernoulli
+      p: 0.05
+    tau: 14.0
+
+  - id: 5
+    name: "tonsillitis"
+    family:
+      type: bernoulli
+      p: 0.03
+    tau: 10.0

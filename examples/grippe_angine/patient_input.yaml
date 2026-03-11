@@ -1,0 +1,117 @@
+# Grippe vs. Angine differential diagnosis
+#
+# A patient presents with fever, sore throat, and headache.
+# The model should differentiate between flu (grippe) and
+# tonsillitis (angine) based on symptom patterns.
+#
+# Key clinical insight:
+#   - Flu → fever + headache + body aches (systemic)
+#   - Tonsillitis → fever + sore throat (localised)
+#   - Patient has NO body aches → less likely flu
+
+nodes:
+  # -- Clinical variables (symptoms) --
+  - id: 0
+    name: "temperature"
+    family:
+      type: gaussian
+      mu: 37.0
+      sigma2: 0.25
+    tau: 7.0
+
+  - id: 1
+    name: "headache"
+    family:
+      type: bernoulli
+      p: 0.1
+    tau: 3.0
+
+  - id: 2
+    name: "sore_throat"
+    family:
+      type: bernoulli
+      p: 0.05
+    tau: 5.0
+
+  - id: 3
+    name: "body_aches"
+    family:
+      type: bernoulli
+      p: 0.05
+    tau: 3.0
+
+  # -- Disease variables --
+  - id: 4
+    name: "flu"
+    family:
+      type: bernoulli
+      p: 0.05
+    tau: 14.0
+
+  - id: 5
+    name: "tonsillitis"
+    family:
+      type: bernoulli
+      p: 0.03
+    tau: 10.0
+
+edges:
+  # Flu causes systemic symptoms
+  # flu (d=1) → temperature (d=2): 1×2 coupling
+  - from: 4
+    to: 0
+    coupling:
+      - [0.15, 0.0]
+
+  # flu (d=1) → headache (d=1): 1×1 coupling
+  - from: 4
+    to: 1
+    coupling:
+      - [0.12]
+
+  # flu (d=1) → body_aches (d=1): 1×1 coupling
+  - from: 4
+    to: 3
+    coupling:
+      - [0.15]
+
+  # Tonsillitis causes localised symptoms
+  # tonsillitis (d=1) → temperature (d=2): 1×2 coupling
+  - from: 5
+    to: 0
+    coupling:
+      - [0.10, 0.0]
+
+  # tonsillitis (d=1) → sore_throat (d=1): 1×1 coupling
+  - from: 5
+    to: 2
+    coupling:
+      - [0.20]
+
+observations:
+  # Patient presents with:
+  # - High fever: 39.2°C (measured with thermometer, low noise)
+  - type: gaussian_noise
+    node: 0
+    value: 39.2
+    noise_var: 0.04
+
+  # - Sore throat: yes
+  - type: bernoulli_exact
+    node: 2
+    value: true
+
+  # - Headache: yes
+  - type: bernoulli_exact
+    node: 1
+    value: true
+
+  # - Body aches: NO — this is the key differentiator!
+  - type: bernoulli_exact
+    node: 3
+    value: false
+
+inference:
+  max_iter: 500
+  tolerance: 1.0e-10
+  delta_t: 0.0

@@ -1,0 +1,37 @@
+# Grippe vs. Angine — edge definitions
+#
+# Coupling matrices between disease variables and symptoms.
+# These encode clinical knowledge about symptom–disease associations.
+
+edges:
+  # Flu causes systemic symptoms
+  # flu (d=1) → temperature (d=2): 1×2 coupling
+  - from: 4
+    to: 0
+    coupling:
+      - [0.15, 0.0]
+
+  # flu (d=1) → headache (d=1): 1×1 coupling
+  - from: 4
+    to: 1
+    coupling:
+      - [0.12]
+
+  # flu (d=1) → body_aches (d=1): 1×1 coupling
+  - from: 4
+    to: 3
+    coupling:
+      - [0.15]
+
+  # Tonsillitis causes localised symptoms
+  # tonsillitis (d=1) → temperature (d=2): 1×2 coupling
+  - from: 5
+    to: 0
+    coupling:
+      - [0.10, 0.0]
+
+  # tonsillitis (d=1) → sore_throat (d=1): 1×1 coupling
+  - from: 5
+    to: 2
+    coupling:
+      - [0.20]

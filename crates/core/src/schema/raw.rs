@@ -7,19 +7,39 @@
 use serde::{Deserialize, Serialize};
 
 /// Top-level YAML document.
+///
+/// All fields default to empty so that each file can provide a subset
+/// of the config.  Multiple files are merged with [`GraphConfig::merge`]
+/// before validation.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GraphConfig {
-    /// Node definitions.
+    /// Node definitions (appended across files).
+    #[serde(default)]
     pub nodes: Vec<NodeDef>,
-    /// Edge definitions (optional — a graph with no edges is valid).
+    /// Edge definitions (appended across files).
     #[serde(default)]
     pub edges: Vec<EdgeDef>,
-    /// Observations (optional).
+    /// Observations (appended across files).
     #[serde(default)]
     pub observations: Vec<ObservationDef>,
-    /// Inference settings.
-    pub inference: InferenceDef,
+    /// Inference settings (last file wins).
+    pub inference: Option<InferenceDef>,
+}
+
+impl GraphConfig {
+    /// Merge another config into this one.
+    ///
+    /// - `nodes`, `edges`, and `observations` are **appended**.
+    /// - `inference` is **overridden** by `other` if `other` provides it.
+    pub fn merge(&mut self, other: Self) {
+        self.nodes.extend(other.nodes);
+        self.edges.extend(other.edges);
+        self.observations.extend(other.observations);
+        if other.inference.is_some() {
+            self.inference = other.inference;
+        }
+    }
 }
 
 /// A node in the graph.
