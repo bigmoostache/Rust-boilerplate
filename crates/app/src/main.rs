@@ -175,38 +175,88 @@ fn run_infer(input_paths: &[String], output_path: Option<&str>) -> anyhow::Resul
             inference_result.iterations
         );
     }
-    for posterior in &inference_result.posteriors {
-        let _r = writeln!(stdout, "- {}", format_posterior(posterior));
+
+    // Build table rows: (name, family, param1, param2)
+    let rows: Vec<(String, String, String, String)> = inference_result
+        .posteriors
+        .iter()
+        .map(posterior_columns)
+        .collect();
+
+    // Compute column widths
+    let w_name = rows.iter().map(|r| r.0.len()).max().unwrap_or(0);
+    let w_family = rows.iter().map(|r| r.1.len()).max().unwrap_or(0);
+    let w_p1 = rows.iter().map(|r| r.2.len()).max().unwrap_or(0);
+
+    for (name, family, p1, p2) in &rows {
+        if p2.is_empty() {
+            let _r = writeln!(
+                stdout,
+                "  {name:<w_name$}  {family:<w_family$}  {p1:>w_p1$}"
+            );
+        } else {
+            let _r = writeln!(
+                stdout,
+                "  {name:<w_name$}  {family:<w_family$}  {p1:>w_p1$}  {p2}"
+            );
+        }
     }
 
     Ok(())
 }
 
-/// Format a node posterior as a short human-readable string.
-fn format_posterior(p: &app_core::schema::output::NodePosterior) -> String {
+/// Extract table columns from a node posterior: (name, family, param1, param2).
+fn posterior_columns(
+    p: &app_core::schema::output::NodePosterior,
+) -> (String, String, String, String) {
     match &p.family {
-        app_core::schema::raw::FamilyDef::Gaussian { mu, sigma2 } => {
-            format!("{} (gaussian) mu={mu:.2}, sigma2={sigma2:.2}", p.name)
-        }
-        app_core::schema::raw::FamilyDef::Bernoulli { p: prob } => {
-            format!("{} (bernoulli) p={prob:.2}", p.name)
-        }
-        app_core::schema::raw::FamilyDef::Gamma { alpha, beta } => {
-            format!("{} (gamma) alpha={alpha:.2}, beta={beta:.2}", p.name)
-        }
-        app_core::schema::raw::FamilyDef::Beta { alpha, beta } => {
-            format!("{} (beta) alpha={alpha:.2}, beta={beta:.2}", p.name)
-        }
-        app_core::schema::raw::FamilyDef::Poisson { lambda } => {
-            format!("{} (poisson) lambda={lambda:.2}", p.name)
-        }
+        app_core::schema::raw::FamilyDef::Gaussian { mu, sigma2 } => (
+            p.name.clone(),
+            "gaussian".to_owned(),
+            format!("mu={mu:.2}"),
+            format!("sigma2={sigma2:.2}"),
+        ),
+        app_core::schema::raw::FamilyDef::Bernoulli { p: prob } => (
+            p.name.clone(),
+            "bernoulli".to_owned(),
+            format!("p={prob:.2}"),
+            String::new(),
+        ),
+        app_core::schema::raw::FamilyDef::Gamma { alpha, beta } => (
+            p.name.clone(),
+            "gamma".to_owned(),
+            format!("alpha={alpha:.2}"),
+            format!("beta={beta:.2}"),
+        ),
+        app_core::schema::raw::FamilyDef::Beta { alpha, beta } => (
+            p.name.clone(),
+            "beta".to_owned(),
+            format!("alpha={alpha:.2}"),
+            format!("beta={beta:.2}"),
+        ),
+        app_core::schema::raw::FamilyDef::Poisson { lambda } => (
+            p.name.clone(),
+            "poisson".to_owned(),
+            format!("lambda={lambda:.2}"),
+            String::new(),
+        ),
         app_core::schema::raw::FamilyDef::Categorical { probs } => {
             let ps: Vec<String> = probs.iter().map(|v| format!("{v:.2}")).collect();
-            format!("{} (categorical) probs=[{}]", p.name, ps.join(", "))
+            (
+                p.name.clone(),
+                "categorical".to_owned(),
+                format!("probs=[{}]", ps.join(", ")),
+                String::new(),
+            )
         }
         app_core::schema::raw::FamilyDef::Dirichlet { alpha } => {
             let as_str: Vec<String> = alpha.iter().map(|v| format!("{v:.2}")).collect();
-            format!("{} (dirichlet) alpha=[{}]", p.name, as_str.join(", "))
+            (
+                p.name.clone(),
+                "dirichlet".to_owned(),
+                format!("alpha=[{}]", as_str.join(", ")),
+                String::new(),
+            )
         }
     }
 }
