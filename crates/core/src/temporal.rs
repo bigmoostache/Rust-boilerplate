@@ -85,6 +85,20 @@ mod tests {
         }
     }
 
+    /// Helper: extract eta1 from a Gaussian `NaturalParams`.
+    fn eta1_of(params: &NaturalParams) -> f64 {
+        let v = params.eta_vector();
+        v.get(0).copied().unwrap_or(f64::NAN)
+    }
+
+    /// Helper: extract (eta1, eta2) from a Gaussian `NaturalParams`.
+    fn eta12_of(params: &NaturalParams) -> (f64, f64) {
+        let v = params.eta_vector();
+        let e1 = v.get(0).copied().unwrap_or(f64::NAN);
+        let e2 = v.get(1).copied().unwrap_or(f64::NAN);
+        (e1, e2)
+    }
+
     #[test]
     fn zero_delta_t_keeps_prev() {
         let mut node = gaussian_node("A", 5.0, 2.0, 10.0);
@@ -95,9 +109,7 @@ mod tests {
         };
         relax_node(&mut node, 0.0);
         // decay = e^0 = 1 → relax = 0·epidemio + 1·prev = prev
-        let NaturalParams::Gaussian { eta1, eta2 } = node.relax else {
-            panic!("expected Gaussian");
-        };
+        let (eta1, eta2) = eta12_of(&node.relax);
         assert!((eta1 - 1.0).abs() < 1e-12);
         assert!((eta2 - (-0.25)).abs() < 1e-12);
     }
@@ -112,16 +124,8 @@ mod tests {
         };
         // Δt = 100, τ = 1 → decay ≈ 0 → relax ≈ epidemio
         relax_node(&mut node, 100.0);
-        let NaturalParams::Gaussian { eta1, eta2 } = node.relax else {
-            panic!("expected Gaussian");
-        };
-        let NaturalParams::Gaussian {
-            eta1: epi1,
-            eta2: epi2,
-        } = node.epidemio
-        else {
-            panic!("expected Gaussian");
-        };
+        let (eta1, eta2) = eta12_of(&node.relax);
+        let (epi1, epi2) = eta12_of(&node.epidemio);
         assert!((eta1 - epi1).abs() < 1e-10);
         assert!((eta2 - epi2).abs() < 1e-10);
     }
@@ -140,9 +144,7 @@ mod tests {
         // relax = 0.5 · epidemio + 0.5 · prev
         // η₁ = 0.5 * 0 + 0.5 * 4 = 2
         // η₂ = 0.5 * (-0.5) + 0.5 * (-0.5) = -0.5
-        let NaturalParams::Gaussian { eta1, eta2 } = node.relax else {
-            panic!("expected Gaussian");
-        };
+        let (eta1, eta2) = eta12_of(&node.relax);
         assert!((eta1 - 2.0).abs() < 1e-12);
         assert!((eta2 - (-0.5)).abs() < 1e-12);
     }
@@ -156,16 +158,8 @@ mod tests {
         };
         relax_node(&mut node, 1.0);
         // τ = 0 → decay = 0 → relax = epidemio
-        let NaturalParams::Gaussian { eta1, eta2 } = node.relax else {
-            panic!("expected Gaussian");
-        };
-        let NaturalParams::Gaussian {
-            eta1: epi1,
-            eta2: epi2,
-        } = node.epidemio
-        else {
-            panic!("expected Gaussian");
-        };
+        let (eta1, eta2) = eta12_of(&node.relax);
+        let (epi1, epi2) = eta12_of(&node.epidemio);
         assert!((eta1 - epi1).abs() < 1e-12);
         assert!((eta2 - epi2).abs() < 1e-12);
     }
@@ -192,20 +186,14 @@ mod tests {
         }
         relax_graph(&mut graph, 2.0_f64.ln());
         // Node 0: τ=1, decay=0.5 → η₁ = 0.5*0 + 0.5*4 = 2
-        if let Some(n) = graph.nodes.get(0) {
-            let NaturalParams::Gaussian { eta1, .. } = n.relax else {
-                panic!("expected Gaussian");
-            };
-            assert!((eta1 - 2.0).abs() < 1e-12);
+        if let Some(n) = graph.nodes.first() {
+            assert!((eta1_of(&n.relax) - 2.0).abs() < 1e-12);
         }
         // Node 1: τ=2, decay=e^{-ln2/2}=e^{-0.347}≈0.707
         if let Some(n) = graph.nodes.get(1) {
-            let NaturalParams::Gaussian { eta1, .. } = n.relax else {
-                panic!("expected Gaussian");
-            };
             let decay = (-(2.0_f64.ln()) / 2.0).exp();
-            let expected = (1.0 - decay) * 10.0 + decay * 20.0;
-            assert!((eta1 - expected).abs() < 1e-12);
+            let expected = (1.0 - decay).mul_add(10.0, decay * 20.0);
+            assert!((eta1_of(&n.relax) - expected).abs() < 1e-12);
         }
     }
 
@@ -222,19 +210,10 @@ mod tests {
         }
         advance_and_relax(&mut graph, 2.0_f64.ln());
         // After advance: prev should be the old post.
-        if let Some(n) = graph.nodes.get(0) {
-            let NaturalParams::Gaussian { eta1, .. } = n.prev else {
-                panic!("expected Gaussian");
-            };
-            assert!((eta1 - 6.0).abs() < 1e-12);
+        if let Some(n) = graph.nodes.first() {
+            assert!((eta1_of(&n.prev) - 6.0).abs() < 1e-12);
             // relax = 0.5*epidemio + 0.5*prev = 0.5*0 + 0.5*6 = 3
-            let NaturalParams::Gaussian {
-                eta1: relax_eta1, ..
-            } = n.relax
-            else {
-                panic!("expected Gaussian");
-            };
-            assert!((relax_eta1 - 3.0).abs() < 1e-12);
+            assert!((eta1_of(&n.relax) - 3.0).abs() < 1e-12);
         }
     }
 }

@@ -120,12 +120,13 @@ mod tests {
     #[test]
     fn suff_stats_values() {
         let t = expected_suff_stats(ETA1, ETA2);
-        let (alpha, beta) = (3.0, 2.0);
-        // E[ln x] = ψ(α) − ln β
+        assert_eq!(t.len(), 2);
         let psi3 = digamma(3.0);
-        assert!((t[0] - (psi3 - 2.0_f64.ln())).abs() < 1e-10);
+        let t0 = t.get(0).copied().unwrap_or(f64::NAN);
+        let t1 = t.get(1).copied().unwrap_or(f64::NAN);
+        assert!((t0 - (psi3 - 2.0_f64.ln())).abs() < 1e-10);
         // E[x] = α/β = 1.5
-        assert!((t[1] - alpha / beta).abs() < 1e-12);
+        assert!((t1 - 3.0 / 2.0).abs() < 1e-12);
     }
 
     #[test]
@@ -150,6 +151,7 @@ mod tests {
         assert!(lgamma(2.0).abs() < 1e-12);
         assert!((lgamma(3.0) - 2.0_f64.ln()).abs() < 1e-10);
         // ln Γ(0.5) = ½ ln π
-        assert!((lgamma(0.5) - 0.5 * std::f64::consts::PI.ln()).abs() < 1e-10);
+        let half_ln_pi = 0.5 * std::f64::consts::PI.ln();
+        assert!((lgamma(0.5) - half_ln_pi).abs() < 1e-10);
     }
 }

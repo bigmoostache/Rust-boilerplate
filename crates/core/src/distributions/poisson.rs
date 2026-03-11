@@ -128,7 +128,8 @@ mod tests {
     #[test]
     fn suff_stats_values() {
         let t = expected_suff_stats(ETA1);
-        assert!((t[0] - 5.0).abs() < 1e-12);
+        let val = t.get(0).copied().unwrap_or(f64::NAN);
+        assert!((val - 5.0).abs() < 1e-12);
     }
 
     #[test]

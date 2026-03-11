@@ -61,8 +61,11 @@ mod tests {
     #[test]
     fn suff_stats_values() {
         let t = expected_suff_stats(ETA1, ETA2);
-        assert!((t[0] - 3.0).abs() < 1e-12); // E[x] = μ
-        assert!((t[1] - 13.0).abs() < 1e-12); // E[x²] = μ² + σ² = 9 + 4
+        assert_eq!(t.len(), 2);
+        let ex = t.get(0).copied().unwrap_or(f64::NAN);
+        let ex2 = t.get(1).copied().unwrap_or(f64::NAN);
+        assert!((ex - 3.0).abs() < 1e-12);
+        assert!((ex2 - 13.0).abs() < 1e-12);
     }
 
     #[test]
@@ -86,7 +89,7 @@ mod tests {
         // A(η) = −η₁²/(4η₂) + ½ ln(−π/η₂)
         // = −0.5625 / (−0.5) + ½ ln(π/0.125)
         // = 1.125 + ½ ln(8π)
-        let expected = 1.125 + 0.5 * (8.0 * std::f64::consts::PI).ln();
+        let expected = 0.5f64.mul_add((8.0 * std::f64::consts::PI).ln(), 1.125);
         assert!((a - expected).abs() < 1e-12);
     }
 }

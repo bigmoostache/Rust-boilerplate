@@ -104,7 +104,7 @@ mod tests {
     use crate::graph::{Edge, Graph, Node};
     use crate::observation::Observation;
 
-    use super::Elbo;
+    use super::Elbo as _;
 
     fn make_gaussian_node(name: &str, mu: f64, sigma2: f64) -> Node {
         let eta1 = mu / sigma2;
@@ -179,7 +179,7 @@ mod tests {
 
         // Obs = E[ln N(0; x, 1)] = −½ ln(2π) − E[(0−x)²]/2
         // = −½ ln(2π) − (0 + 0 + σ²)/2 = −½ ln(2π) − ½
-        let expected_obs = -0.5 * (2.0 * std::f64::consts::PI).ln() - 0.5;
+        let expected_obs = (-0.5f64).mul_add((2.0 * std::f64::consts::PI).ln(), -0.5);
         assert!(
             (elbo.observation - expected_obs).abs() < 1e-10,
             "obs={}, expected={}",

@@ -74,9 +74,12 @@ mod tests {
     fn probabilities_values() {
         let eta = standard_eta();
         let probs = probabilities(&eta);
-        assert!((probs[0] - 0.2).abs() < 1e-10);
-        assert!((probs[1] - 0.3).abs() < 1e-10);
-        assert!((probs[2] - 0.5).abs() < 1e-10);
+        let p0 = probs.first().copied().unwrap_or(f64::NAN);
+        let p1 = probs.get(1).copied().unwrap_or(f64::NAN);
+        let p2 = probs.get(2).copied().unwrap_or(f64::NAN);
+        assert!((p0 - 0.2).abs() < 1e-10);
+        assert!((p1 - 0.3).abs() < 1e-10);
+        assert!((p2 - 0.5).abs() < 1e-10);
     }
 
     #[test]
@@ -84,15 +87,20 @@ mod tests {
         let eta = standard_eta();
         let t = expected_suff_stats(&eta);
         assert_eq!(t.len(), 2); // K-1 = 2
-        assert!((t[0] - 0.2).abs() < 1e-10);
-        assert!((t[1] - 0.3).abs() < 1e-10);
+        let t0 = t.get(0).copied().unwrap_or(f64::NAN);
+        let t1 = t.get(1).copied().unwrap_or(f64::NAN);
+        assert!((t0 - 0.2).abs() < 1e-10);
+        assert!((t1 - 0.3).abs() < 1e-10);
     }
 
     #[test]
     fn entropy_value() {
         let eta = standard_eta();
         let h = entropy(&eta);
-        let expected = -0.2 * 0.2_f64.ln() - 0.3 * 0.3_f64.ln() - 0.5 * 0.5_f64.ln();
+        let expected = (-0.2_f64).mul_add(
+            0.2_f64.ln(),
+            (-0.3_f64).mul_add(0.3_f64.ln(), -0.5 * 0.5_f64.ln()),
+        );
         assert!((h - expected).abs() < 1e-10);
     }
 

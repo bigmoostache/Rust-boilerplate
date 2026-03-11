@@ -75,11 +75,15 @@ mod tests {
     #[test]
     fn suff_stats_values() {
         let t = expected_suff_stats(&ALPHA);
+        assert_eq!(t.len(), 3);
         let alpha_sum = 10.0;
         let psi_sum = digamma(alpha_sum);
-        assert!((t[0] - (digamma(2.0) - psi_sum)).abs() < 1e-10);
-        assert!((t[1] - (digamma(3.0) - psi_sum)).abs() < 1e-10);
-        assert!((t[2] - (digamma(5.0) - psi_sum)).abs() < 1e-10);
+        let t0 = t.get(0).copied().unwrap_or(f64::NAN);
+        let t1 = t.get(1).copied().unwrap_or(f64::NAN);
+        let t2 = t.get(2).copied().unwrap_or(f64::NAN);
+        assert!((t0 - (digamma(2.0) - psi_sum)).abs() < 1e-10);
+        assert!((t1 - (digamma(3.0) - psi_sum)).abs() < 1e-10);
+        assert!((t2 - (digamma(5.0) - psi_sum)).abs() < 1e-10);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! Tests for the YAML schema parsing and validation.
 
 #[cfg(test)]
-mod tests {
+mod schema_tests {
     use crate::distributions::NaturalParams;
     use crate::schema::validate::parse_yaml;
 
@@ -14,6 +14,7 @@ nodes:
       sigma2: 225.0
     tau: 30.0
 edges: []
+instruments: []
 observations: []
 inference:
   max_iter: 100
@@ -23,11 +24,14 @@ inference:
 
     #[test]
     fn minimal_valid_config() {
-        let config = parse_yaml(MINIMAL_YAML).unwrap_or_else(|e| panic!("{e}"));
-        assert_eq!(config.graph.num_nodes(), 1);
-        assert_eq!(config.graph.num_edges(), 0);
-        assert_eq!(config.max_iter, 100);
-        assert!((config.tolerance - 1e-8).abs() < 1e-15);
+        let result = parse_yaml(MINIMAL_YAML);
+        assert!(result.is_ok(), "parse failed: {:?}", result.as_ref().err());
+        if let Ok(config) = result {
+            assert_eq!(config.graph.num_nodes(), 1);
+            assert_eq!(config.graph.num_edges(), 0);
+            assert_eq!(config.max_iter, 100);
+            assert!((config.tolerance - 1e-8).abs() < 1e-15);
+        }
     }
 
     #[test]
@@ -61,25 +65,35 @@ edges:
     to: bmi
     coupling:
       - [0.1, 0.0]
-observations:
-  - type: gaussian_noise
+instruments:
+  - name: bp_cuff
     node: blood_pressure
-    value: 145.0
-    noise_var: 25.0
-  - type: gaussian_noise
+    model:
+      type: gaussian_noise
+      noise_var: 25.0
+  - name: bmi_scale
     node: bmi
+    model:
+      type: gaussian_noise
+      noise_var: 4.0
+observations:
+  - instrument: bp_cuff
+    value: 145.0
+  - instrument: bmi_scale
     value: 30.0
-    noise_var: 4.0
 inference:
   max_iter: 200
   tolerance: 1.0e-10
   delta_t: 7.0
 "#;
-        let config = parse_yaml(yaml).unwrap_or_else(|e| panic!("{e}"));
-        assert_eq!(config.graph.num_nodes(), 3);
-        assert_eq!(config.graph.num_edges(), 2);
-        assert_eq!(config.graph.observations_for("blood_pressure").len(), 1);
-        assert_eq!(config.graph.observations_for("bmi").len(), 1);
+        let result = parse_yaml(yaml);
+        assert!(result.is_ok(), "parse failed: {:?}", result.as_ref().err());
+        if let Ok(config) = result {
+            assert_eq!(config.graph.num_nodes(), 3);
+            assert_eq!(config.graph.num_edges(), 2);
+            assert_eq!(config.graph.observations_for("blood_pressure").len(), 1);
+            assert_eq!(config.graph.observations_for("bmi").len(), 1);
+        }
     }
 
     #[test]
@@ -93,11 +107,15 @@ nodes:
     family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
     tau: 1.0
 edges: []
+instruments: []
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
-        let err = parse_yaml(yaml).unwrap_err();
-        assert!(err.errors.iter().any(|e| e.message.contains("duplicate")));
+        let result = parse_yaml(yaml);
+        assert!(result.is_err());
+        if let Err(err) = &result {
+            assert!(err.errors.iter().any(|e| e.message.contains("duplicate")));
+        }
     }
 
     #[test]
@@ -108,15 +126,19 @@ nodes:
     family: { type: gaussian, mu: 0.0, sigma2: -1.0 }
     tau: 1.0
 edges: []
+instruments: []
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
-        let err = parse_yaml(yaml).unwrap_err();
-        assert!(
-            err.errors
-                .iter()
-                .any(|e| e.message.contains("sigma2 must be > 0"))
-        );
+        let result = parse_yaml(yaml);
+        assert!(result.is_err());
+        if let Err(err) = &result {
+            assert!(
+                err.errors
+                    .iter()
+                    .any(|e| e.message.contains("sigma2 must be > 0"))
+            );
+        }
     }
 
     #[test]
@@ -127,15 +149,19 @@ nodes:
     family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
     tau: -5.0
 edges: []
+instruments: []
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
-        let err = parse_yaml(yaml).unwrap_err();
-        assert!(
-            err.errors
-                .iter()
-                .any(|e| e.message.contains("tau must be > 0"))
-        );
+        let result = parse_yaml(yaml);
+        assert!(result.is_err());
+        if let Err(err) = &result {
+            assert!(
+                err.errors
+                    .iter()
+                    .any(|e| e.message.contains("tau must be > 0"))
+            );
+        }
     }
 
     #[test]
@@ -151,15 +177,19 @@ edges:
     coupling:
       - [1.0, 0.0]
       - [0.0, 1.0]
+instruments: []
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
-        let err = parse_yaml(yaml).unwrap_err();
-        assert!(
-            err.errors
-                .iter()
-                .any(|e| e.message.contains("unknown node"))
-        );
+        let result = parse_yaml(yaml);
+        assert!(result.is_err());
+        if let Err(err) = &result {
+            assert!(
+                err.errors
+                    .iter()
+                    .any(|e| e.message.contains("unknown node"))
+            );
+        }
     }
 
     #[test]
@@ -178,37 +208,72 @@ edges:
     coupling:
       - [1.0, 0.0]
       - [0.0, 1.0]
+instruments: []
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
-        let err = parse_yaml(yaml).unwrap_err();
-        assert!(
-            err.errors
-                .iter()
-                .any(|e| e.message.contains("expected 2×1"))
-        );
+        let result = parse_yaml(yaml);
+        assert!(result.is_err());
+        if let Err(err) = &result {
+            assert!(
+                err.errors
+                    .iter()
+                    .any(|e| e.message.contains("expected 2×1"))
+            );
+        }
     }
 
     #[test]
-    fn incompatible_observation() {
+    fn incompatible_instrument_model() {
         let yaml = r#"
 nodes:
   - name: "A"
     family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
     tau: 1.0
 edges: []
-observations:
-  - type: bernoulli_exact
+instruments:
+  - name: wrong_instrument
     node: A
-    value: true
+    model:
+      type: noisy_channel
+      epsilon: 0.1
+observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
-        let err = parse_yaml(yaml).unwrap_err();
-        assert!(
-            err.errors
-                .iter()
-                .any(|e| e.message.contains("incompatible"))
-        );
+        let result = parse_yaml(yaml);
+        assert!(result.is_err());
+        if let Err(err) = &result {
+            assert!(
+                err.errors
+                    .iter()
+                    .any(|e| e.message.contains("incompatible"))
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_instrument_in_observation() {
+        let yaml = r#"
+nodes:
+  - name: "A"
+    family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
+    tau: 1.0
+edges: []
+instruments: []
+observations:
+  - instrument: nonexistent
+    value: 42.0
+inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
+"#;
+        let result = parse_yaml(yaml);
+        assert!(result.is_err());
+        if let Err(err) = &result {
+            assert!(
+                err.errors
+                    .iter()
+                    .any(|e| e.message.contains("unknown instrument"))
+            );
+        }
     }
 
     #[test]
@@ -219,11 +284,15 @@ nodes:
     family: { type: categorical, probs: [0.3, 0.3, 0.3] }
     tau: 1.0
 edges: []
+instruments: []
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
-        let err = parse_yaml(yaml).unwrap_err();
-        assert!(err.errors.iter().any(|e| e.message.contains("sum to 1")));
+        let result = parse_yaml(yaml);
+        assert!(result.is_err());
+        if let Err(err) = &result {
+            assert!(err.errors.iter().any(|e| e.message.contains("sum to 1")));
+        }
     }
 
     #[test]
@@ -235,15 +304,19 @@ nodes:
     tau: 1.0
     bogus_field: 42
 edges: []
+instruments: []
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
-        let err = parse_yaml(yaml).unwrap_err();
-        assert!(
-            err.errors
-                .iter()
-                .any(|e| e.message.contains("unknown field"))
-        );
+        let result = parse_yaml(yaml);
+        assert!(result.is_err());
+        if let Err(err) = &result {
+            assert!(
+                err.errors
+                    .iter()
+                    .any(|e| e.message.contains("unknown field"))
+            );
+        }
     }
 
     #[test]
@@ -255,19 +328,27 @@ nodes:
     family: { type: gaussian, mu: 3.0, sigma2: 4.0 }
     tau: 1.0
 edges: []
+instruments: []
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
-        let config = parse_yaml(yaml).unwrap_or_else(|e| panic!("{e}"));
-        let node = config
-            .graph
-            .node("A")
-            .unwrap_or_else(|| panic!("no node A"));
-        let NaturalParams::Gaussian { eta1, eta2 } = node.epidemio else {
-            panic!("expected Gaussian");
-        };
-        assert!((eta1 - 0.75).abs() < 1e-12);
-        assert!((eta2 - (-0.125)).abs() < 1e-12);
+        let result = parse_yaml(yaml);
+        assert!(result.is_ok(), "parse failed: {:?}", result.as_ref().err());
+        if let Ok(config) = result {
+            if let Some(node) = config.graph.node("A") {
+                assert!(
+                    matches!(node.epidemio, NaturalParams::Gaussian { .. }),
+                    "expected Gaussian"
+                );
+                let v = node.epidemio.eta_vector();
+                let eta1 = v.get(0).copied().unwrap_or(f64::NAN);
+                let eta2 = v.get(1).copied().unwrap_or(f64::NAN);
+                assert!((eta1 - 0.75).abs() < 1e-12);
+                assert!((eta2 - (-0.125)).abs() < 1e-12);
+            } else {
+                assert!(config.graph.node("A").is_some(), "no node A");
+            }
+        }
     }
 
     #[test]
@@ -296,11 +377,15 @@ nodes:
     family: { type: dirichlet, alpha: [2.0, 3.0, 5.0] }
     tau: 1.0
 edges: []
+instruments: []
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
-        let config = parse_yaml(yaml).unwrap_or_else(|e| panic!("{e}"));
-        assert_eq!(config.graph.num_nodes(), 7);
+        let result = parse_yaml(yaml);
+        assert!(result.is_ok(), "parse failed: {:?}", result.as_ref().err());
+        if let Ok(config) = result {
+            assert_eq!(config.graph.num_nodes(), 7);
+        }
     }
 
     #[test]
@@ -314,16 +399,20 @@ nodes:
     family: { type: bernoulli, p: 2.0 }
     tau: 0.0
 edges: []
+instruments: []
 observations: []
 inference: { max_iter: 10, tolerance: -1.0, delta_t: -1.0 }
 "#;
-        let err = parse_yaml(yaml).unwrap_err();
-        // Should have: sigma2, tau, duplicate name, p, tau, tolerance, delta_t
-        assert!(
-            err.errors.len() >= 5,
-            "expected at least 5 errors, got {}",
-            err.errors.len()
-        );
+        let result = parse_yaml(yaml);
+        assert!(result.is_err());
+        if let Err(err) = &result {
+            // Should have: sigma2, tau, duplicate name, p, tau, tolerance, delta_t
+            assert!(
+                err.errors.len() >= 5,
+                "expected at least 5 errors, got {}",
+                err.errors.len()
+            );
+        }
     }
 
     #[test]
@@ -342,14 +431,18 @@ nodes:
     family: { type: bernoulli, p: 0.5 }
     tau: 1.0
 edges: []
+instruments: []
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
-        let config = parse_yaml(yaml).unwrap_or_else(|e| panic!("{e}"));
-        assert_eq!(config.graph.num_edges(), 1);
-        // Edge should be A → B
-        assert_eq!(config.graph.neighbors("A").len(), 1);
-        assert_eq!(config.graph.neighbors("B").len(), 1);
+        let result = parse_yaml(yaml);
+        assert!(result.is_ok(), "parse failed: {:?}", result.as_ref().err());
+        if let Ok(config) = result {
+            assert_eq!(config.graph.num_edges(), 1);
+            // Edge should be A → B
+            assert_eq!(config.graph.neighbors("A").len(), 1);
+            assert_eq!(config.graph.neighbors("B").len(), 1);
+        }
     }
 
     #[test]
@@ -368,14 +461,18 @@ nodes:
           - [0.1]
           - [0.0]
 edges: []
+instruments: []
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
-        let config = parse_yaml(yaml).unwrap_or_else(|e| panic!("{e}"));
-        assert_eq!(config.graph.num_edges(), 1);
-        // Edge should be A → B (from declares: A → this_node=B)
-        assert_eq!(config.graph.neighbors("A").len(), 1);
-        assert_eq!(config.graph.neighbors("B").len(), 1);
+        let result = parse_yaml(yaml);
+        assert!(result.is_ok(), "parse failed: {:?}", result.as_ref().err());
+        if let Ok(config) = result {
+            assert_eq!(config.graph.num_edges(), 1);
+            // Edge should be A → B (from declares: A → this_node=B)
+            assert_eq!(config.graph.neighbors("A").len(), 1);
+            assert_eq!(config.graph.neighbors("B").len(), 1);
+        }
     }
 
     #[test]
@@ -406,13 +503,117 @@ edges:
   - from: tonsillitis
     to: sore_throat
     coupling: [[2.5]]
+instruments: []
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
-        let config = parse_yaml(yaml).unwrap_or_else(|e| panic!("{e}"));
-        // 2 inline (flu→headache, flu→body_aches) + 1 top-level (tonsillitis→sore_throat)
-        assert_eq!(config.graph.num_edges(), 3);
-        assert_eq!(config.graph.neighbors("flu").len(), 2);
-        assert_eq!(config.graph.neighbors("tonsillitis").len(), 1);
+        let result = parse_yaml(yaml);
+        assert!(result.is_ok(), "parse failed: {:?}", result.as_ref().err());
+        if let Ok(config) = result {
+            // 2 inline (flu→headache, flu→body_aches) + 1 top-level (tonsillitis→sore_throat)
+            assert_eq!(config.graph.num_edges(), 3);
+            assert_eq!(config.graph.neighbors("flu").len(), 2);
+            assert_eq!(config.graph.neighbors("tonsillitis").len(), 1);
+        }
+    }
+
+    #[test]
+    fn instrument_validation() {
+        // Invalid: negative noise_var
+        let yaml = r#"
+nodes:
+  - name: "A"
+    family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
+    tau: 1.0
+edges: []
+instruments:
+  - name: bad_thermo
+    node: A
+    model:
+      type: gaussian_noise
+      noise_var: -1.0
+observations: []
+inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
+"#;
+        let result = parse_yaml(yaml);
+        assert!(result.is_err());
+        if let Err(err) = &result {
+            assert!(
+                err.errors
+                    .iter()
+                    .any(|e| e.message.contains("noise_var must be > 0"))
+            );
+        }
+    }
+
+    #[test]
+    fn duplicate_instrument_name() {
+        let yaml = r#"
+nodes:
+  - name: "A"
+    family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
+    tau: 1.0
+edges: []
+instruments:
+  - name: thermo
+    node: A
+    model:
+      type: gaussian_noise
+      noise_var: 1.0
+  - name: thermo
+    node: A
+    model:
+      type: gaussian_noise
+      noise_var: 2.0
+observations: []
+inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
+"#;
+        let result = parse_yaml(yaml);
+        assert!(result.is_err());
+        if let Err(err) = &result {
+            assert!(
+                err.errors
+                    .iter()
+                    .any(|e| e.message.contains("duplicate instrument"))
+            );
+        }
+    }
+
+    #[test]
+    fn instrument_with_observations() {
+        let yaml = r#"
+nodes:
+  - name: "bp"
+    family: { type: gaussian, mu: 120.0, sigma2: 100.0 }
+    tau: 30.0
+  - name: "has_flu"
+    family: { type: bernoulli, p: 0.3 }
+    tau: 14.0
+edges: []
+instruments:
+  - name: bp_cuff
+    node: bp
+    model:
+      type: gaussian_noise
+      noise_var: 25.0
+  - name: symptom_check
+    node: has_flu
+    model:
+      type: noisy_channel
+      epsilon: 0.1
+observations:
+  - instrument: bp_cuff
+    value: 145.0
+  - instrument: symptom_check
+    value: true
+inference: { max_iter: 100, tolerance: 0.001, delta_t: 1.0 }
+"#;
+        let result = parse_yaml(yaml);
+        assert!(result.is_ok(), "parse failed: {:?}", result.as_ref().err());
+        if let Ok(config) = result {
+            assert_eq!(config.graph.num_nodes(), 2);
+            assert_eq!(config.graph.observations_for("bp").len(), 1);
+            assert_eq!(config.graph.observations_for("has_flu").len(), 1);
+        }
     }
 }

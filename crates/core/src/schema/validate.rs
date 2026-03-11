@@ -12,7 +12,9 @@ use crate::graph::{Edge, Graph, Node, NodeId};
 use crate::observation::Observation;
 
 use super::diag::{SchemaError, SchemaErrors};
-use super::observation_compat::{check_obs_family_compat, validate_observation};
+use super::observation_compat::{
+    ValidatedInstrument, check_model_family_compat, resolve_observation, validate_instrument,
+};
 use super::raw::{EdgeDef, FamilyDef, GraphConfig};
 
 // ---------------------------------------------------------------------------
@@ -234,28 +236,75 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
         }
     }
 
-    // ── Validate observations ───────────────────────────────────
+    // ── Validate instruments ─────────────────────────────────────
+    let mut validated_instruments: HashMap<String, ValidatedInstrument> = HashMap::new();
+    let mut seen_instrument_names: HashSet<String> = HashSet::new();
+
+    for (idx, inst) in raw.instruments.iter().enumerate() {
+        let prefix = format!("instruments[{idx}]");
+
+        if !seen_instrument_names.insert(inst.name.clone()) {
+            errors.push(SchemaError {
+                path: format!("{prefix}.name"),
+                message: format!("duplicate instrument name \"{}\"", inst.name),
+            });
+            continue;
+        }
+
+        // Validate model parameter ranges
+        if let Err(mut errs) = validate_instrument(inst, &prefix) {
+            errors.append(&mut errs);
+            continue;
+        }
+
+        // Check node existence
+        if !seen_ids.contains(&inst.node) {
+            errors.push(SchemaError {
+                path: format!("{prefix}.node"),
+                message: format!("unknown node \"{}\"", inst.node),
+            });
+            continue;
+        }
+
+        // Check model–family compatibility
+        if let Some(family) = node_families.get(inst.node.as_str())
+            && let Some(err) = check_model_family_compat(&inst.model, family, &prefix)
+        {
+            errors.push(err);
+            continue;
+        }
+
+        // Extract num_categories for categorical nodes
+        let num_categories = node_families.get(inst.node.as_str()).and_then(|f| {
+            if let FamilyDef::Categorical { probs } = f {
+                Some(probs.len())
+            } else {
+                None
+            }
+        });
+
+        let _prev = validated_instruments.insert(
+            inst.name.clone(),
+            ValidatedInstrument {
+                node: inst.node.clone(),
+                model: inst.model,
+                num_categories,
+            },
+        );
+    }
+
+    // ── Resolve observations via instruments ────────────────────
     let mut obs_map: HashMap<NodeId, Vec<Observation>> = HashMap::new();
 
     for (idx, raw_obs) in raw.observations.iter().enumerate() {
         let prefix = format!("observations[{idx}]");
-        let (node_id, obs_result) = validate_observation(raw_obs, &prefix);
-
-        if !seen_ids.contains(&node_id) {
-            errors.push(SchemaError {
-                path: format!("{prefix}.node"),
-                message: format!("unknown node \"{node_id}\""),
-            });
-        }
+        let (node_id, obs_result) = resolve_observation(raw_obs, &validated_instruments, &prefix);
 
         match obs_result {
             Ok(obs) => {
-                if let Some(family) = node_families.get(node_id.as_str())
-                    && let Some(err) = check_obs_family_compat(&obs, family, &prefix)
-                {
-                    errors.push(err);
+                if let Some(nid) = node_id {
+                    obs_map.entry(nid).or_default().push(obs);
                 }
-                obs_map.entry(node_id).or_default().push(obs);
             }
             Err(mut errs) => errors.append(&mut errs),
         }

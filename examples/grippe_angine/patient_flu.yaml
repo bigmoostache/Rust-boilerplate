@@ -1,4 +1,4 @@
-# Run: cargo run -- infer -i examples/grippe_angine/nodes.yaml -i examples/grippe_angine/edges.yaml -i examples/grippe_angine/patient_flu.yaml
+# Run: cargo run -- infer -i examples/grippe_angine/nodes.yaml -i examples/grippe_angine/edges.yaml -i examples/grippe_angine/instruments.yaml -i examples/grippe_angine/patient_flu.yaml
 #
 # Patient 1: Classic flu presentation
 #
@@ -7,28 +7,20 @@
 
 observations:
   # High fever: 39.5°C
-  - type: gaussian_noise
-    node: temperature
+  - instrument: thermometre
     value: 39.5
-    noise_var: 0.04
 
   # Headache: yes
-  - type: bernoulli_exact
-    node: headache
+  - instrument: questionnaire_cephalee
     value: true
-    count: 10
 
   # Sore throat: no
-  - type: bernoulli_exact
-    node: sore_throat
+  - instrument: questionnaire_gorge
     value: false
-    count: 10
 
   # Body aches: yes — classic flu symptom
-  - type: bernoulli_exact
-    node: body_aches
+  - instrument: questionnaire_courbatures
     value: true
-    count: 10
 
 inference:
   max_iter: 500

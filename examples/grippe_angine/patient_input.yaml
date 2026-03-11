@@ -92,27 +92,47 @@ edges:
     coupling:
       - [-0.3]
 
+instruments:
+  - name: thermometre
+    node: temperature
+    model:
+      type: gaussian_noise
+      noise_var: 0.04
+
+  - name: questionnaire_cephalee
+    node: headache
+    model:
+      type: noisy_channel
+      epsilon: 0.05
+
+  - name: questionnaire_gorge
+    node: sore_throat
+    model:
+      type: noisy_channel
+      epsilon: 0.05
+
+  - name: questionnaire_courbatures
+    node: body_aches
+    model:
+      type: noisy_channel
+      epsilon: 0.05
+
 observations:
   # Patient presents with:
   # - High fever: 39.2°C (measured with thermometer, low noise)
-  - type: gaussian_noise
-    node: temperature
+  - instrument: thermometre
     value: 39.2
-    noise_var: 0.04
 
   # - Sore throat: yes
-  - type: bernoulli_exact
-    node: sore_throat
+  - instrument: questionnaire_gorge
     value: true
 
   # - Headache: yes
-  - type: bernoulli_exact
-    node: headache
+  - instrument: questionnaire_cephalee
     value: true
 
   # - Body aches: NO — this is the key differentiator!
-  - type: bernoulli_exact
-    node: body_aches
+  - instrument: questionnaire_courbatures
     value: false
 
 inference:

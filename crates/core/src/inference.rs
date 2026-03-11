@@ -177,31 +177,14 @@ fn single_observation_gradient(post: &NaturalParams, obs: &Observation) -> DVect
             DVector::from_vec(vec![value / noise_var, -1.0 / (2.0 * noise_var)])
         }
 
-        // Bernoulli node + Bernoulli observation: exact
-        (NaturalParams::Bernoulli { .. }, Observation::BernoulliExact { value, count }) => {
-            // ln p(obs|x) = obs·ln(x) + (1−obs)·ln(1−x), repeated count times
-            // The η contribution is count · obs (0 or count)
-            let v = if *value { f64::from(*count) } else { 0.0 };
-            DVector::from_vec(vec![v])
-        }
-
         // Poisson node + Poisson count: exact conjugate
         (NaturalParams::Poisson { eta1 }, Observation::PoissonCount { count }) => {
             let k = f64::from(u32::try_from(*count).unwrap_or(u32::MAX));
             DVector::from_vec(vec![k - eta1.exp()])
         }
 
-        // Categorical node + categorical observation: exact
-        (NaturalParams::Categorical { eta }, Observation::CategoricalExact { category }) => {
-            let dim = eta.len();
-            let mut grad = DVector::zeros(dim);
-            if let Some(entry) = grad.get_mut(*category) {
-                *entry = 1.0;
-            }
-            grad
-        }
-
-        // For non-conjugate combos: numerical gradient via finite differences
+        // All other combos (noisy channel, noisy categorical, etc.):
+        // numerical gradient via finite differences
         _ => numerical_observation_gradient(post, obs),
     }
 }
@@ -267,26 +250,28 @@ mod tests {
 
     #[test]
     fn single_node_no_obs() {
-        // With no observations and no couplings, posterior should stay at relax
         let mut graph = Graph::new(vec![make_gaussian_node("A", 0.0, 1.0)], vec![]);
         let result = coordinate_ascent(&mut graph, 100, 1e-10);
 
         assert!(result.converged);
         assert_eq!(result.iterations, 1);
-        // Posterior should equal relax (unchanged)
-        let NaturalParams::Gaussian { eta1, eta2 } = graph.nodes[0].post else {
-            panic!("wrong family");
-        };
+        let post = &graph.nodes.first().map(|n| &n.post);
+        assert!(matches!(post, Some(NaturalParams::Gaussian { .. })));
+        let eta = graph.nodes.first().map(|n| n.post.eta_vector());
+        let eta1 = eta
+            .as_ref()
+            .and_then(|v| v.get(0).copied())
+            .unwrap_or(f64::NAN);
+        let eta2 = eta
+            .as_ref()
+            .and_then(|v| v.get(1).copied())
+            .unwrap_or(f64::NAN);
         assert!(eta1.abs() < 1e-10);
-        assert!((eta2 + 0.5).abs() < 1e-10); // −1/(2·1) = −0.5
+        assert!((eta2 + 0.5).abs() < 1e-10);
     }
 
     #[test]
     fn gaussian_observation_update() {
-        // Prior: N(0, 1), Observation: x=3 with noise σ²_n=1
-        // Bayesian update: posterior = N(1.5, 0.5)
-        // η₁_post = 0/1 + 3/1 = 3, η₂_post = −1/2 + (−1/2) = −1
-        // → μ = −η₁/(2η₂) = −3/(−2) = 1.5, σ² = −1/(2η₂) = 0.5 ✓
         let mut graph = Graph::new(vec![make_gaussian_node("A", 0.0, 1.0)], vec![]);
         graph.add_observation(
             "A".to_owned(),
@@ -299,24 +284,27 @@ mod tests {
         let result = coordinate_ascent(&mut graph, 100, 1e-10);
         assert!(result.converged);
 
-        let NaturalParams::Gaussian { eta1, eta2 } = graph.nodes[0].post else {
-            panic!("wrong family");
-        };
-        // η₁ = 0 + 3/1 = 3
+        let post = &graph.nodes.first().map(|n| &n.post);
+        assert!(matches!(post, Some(NaturalParams::Gaussian { .. })));
+        let eta = graph.nodes.first().map(|n| n.post.eta_vector());
+        let eta1 = eta
+            .as_ref()
+            .and_then(|v| v.get(0).copied())
+            .unwrap_or(f64::NAN);
+        let eta2 = eta
+            .as_ref()
+            .and_then(|v| v.get(1).copied())
+            .unwrap_or(f64::NAN);
         assert!((eta1 - 3.0).abs() < 1e-10, "eta1={eta1}, expected 3.0");
-        // η₂ = −0.5 + (−0.5) = −1.0
         assert!((eta2 - (-1.0)).abs() < 1e-10, "eta2={eta2}, expected −1.0");
     }
 
     #[test]
     fn two_coupled_gaussians() {
-        // Two Gaussian nodes coupled with a small matrix.
-        // Observation on node A should propagate to node B.
         let nodes = vec![
             make_gaussian_node("A", 0.0, 1.0),
             make_gaussian_node("B", 0.0, 1.0),
         ];
-        // Small coupling so it converges quickly
         let edges = vec![Edge {
             i: "A".to_owned(),
             j: "B".to_owned(),
@@ -334,18 +322,18 @@ mod tests {
         let result = coordinate_ascent(&mut graph, 100, 1e-8);
         assert!(result.converged, "did not converge in 100 iterations");
 
-        // Node A should have posterior shifted toward 5.0
-        let NaturalParams::Gaussian { eta1: a_eta1, .. } = graph.nodes[0].post else {
-            panic!("wrong family");
-        };
-        // η₁ of node A should be roughly 5 (from obs) + coupling contribution
+        let eta_a = graph.nodes.first().map(|n| n.post.eta_vector());
+        let a_eta1 = eta_a
+            .as_ref()
+            .and_then(|v| v.get(0).copied())
+            .unwrap_or(f64::NAN);
         assert!(a_eta1 > 4.0, "node A eta1={a_eta1} should be > 4");
 
-        // Node B should have been pulled by coupling
-        let NaturalParams::Gaussian { eta1: b_eta1, .. } = graph.nodes[1].post else {
-            panic!("wrong family");
-        };
-        // Node B has no observation, so it's pulled by coupling with node A
+        let eta_b = graph.nodes.get(1).map(|n| n.post.eta_vector());
+        let b_eta1 = eta_b
+            .as_ref()
+            .and_then(|v| v.get(0).copied())
+            .unwrap_or(f64::NAN);
         assert!(
             b_eta1.abs() > 0.01,
             "node B should be influenced by coupling, eta1={b_eta1}"
@@ -354,7 +342,6 @@ mod tests {
 
     #[test]
     fn elbo_increases() {
-        // ELBO should be non-decreasing across iterations
         let nodes = vec![
             make_gaussian_node("A", 0.0, 1.0),
             make_gaussian_node("B", 0.0, 1.0),
@@ -382,20 +369,15 @@ mod tests {
 
         let result = coordinate_ascent(&mut graph, 50, 1e-10);
 
-        // Check ELBO is non-decreasing (with tolerance for floating point)
-        for window in result.elbo_history.windows(2) {
-            assert!(
-                window[1] >= window[0] - 1e-10,
-                "ELBO decreased: {} → {}",
-                window[0],
-                window[1]
-            );
+        for pair in result.elbo_history.windows(2) {
+            if let (Some(prev), Some(next)) = (pair.first(), pair.get(1)) {
+                assert!(*next >= *prev - 1e-10, "ELBO decreased: {prev} → {next}",);
+            }
         }
     }
 
     #[test]
     fn bernoulli_observation() {
-        // Bernoulli node with uniform prior (η₁ = 0 → p = 0.5)
         let params = NaturalParams::Bernoulli { eta1: 0.0 };
         let node = Node {
             name: "test".to_owned(),
@@ -408,20 +390,21 @@ mod tests {
         let mut graph = Graph::new(vec![node], vec![]);
         graph.add_observation(
             "test".to_owned(),
-            Observation::BernoulliExact {
+            Observation::NoisyChannel {
                 value: true,
-                count: 1,
+                epsilon: 0.0,
             },
         );
 
         let result = coordinate_ascent(&mut graph, 100, 1e-10);
         assert!(result.converged);
 
-        // After observing true, η₁ should be 0 + 1 = 1
-        // p = sigmoid(1) ≈ 0.731
-        let NaturalParams::Bernoulli { eta1 } = graph.nodes[0].post else {
-            panic!("wrong family");
-        };
-        assert!((eta1 - 1.0).abs() < 1e-10, "eta1={eta1}, expected 1.0");
+        let eta = graph.nodes.first().map(|n| n.post.eta_vector());
+        let eta1 = eta.as_ref().and_then(|v| v.get(0).copied()).unwrap_or(0.0);
+        let prob = 1.0 / (1.0 + (-eta1).exp());
+        assert!(
+            prob > 0.55,
+            "p={prob}, should be > 0.55 after observing true"
+        );
     }
 }

@@ -1,4 +1,4 @@
-# Run: cargo run -- infer -i examples/grippe_angine/nodes.yaml -i examples/grippe_angine/edges.yaml -i examples/grippe_angine/patient_angine.yaml
+# Run: cargo run -- infer -i examples/grippe_angine/nodes.yaml -i examples/grippe_angine/edges.yaml -i examples/grippe_angine/instruments.yaml -i examples/grippe_angine/patient_angine.yaml
 #
 # Patient 2: Classic tonsillitis presentation
 #
@@ -7,24 +7,19 @@
 
 observations:
   # Moderate fever: 38.5°C
-  - type: gaussian_noise
-    node: temperature
+  - instrument: thermometre
     value: 38.5
-    noise_var: 0.04
 
   # Headache: no
-  - type: bernoulli_exact
-    node: headache
+  - instrument: questionnaire_cephalee
     value: false
 
   # Sore throat: yes — the dominant symptom
-  - type: bernoulli_exact
-    node: sore_throat
+  - instrument: questionnaire_gorge
     value: true
 
   # Body aches: no
-  - type: bernoulli_exact
-    node: body_aches
+  - instrument: questionnaire_courbatures
     value: false
 
 inference:

@@ -68,13 +68,14 @@ mod tests {
     #[test]
     fn suff_stats_values() {
         let t = expected_suff_stats(ETA1);
-        assert!((t[0] - 0.7).abs() < 1e-12);
+        let p = t.get(0).copied().unwrap_or(f64::NAN);
+        assert!((p - 0.7).abs() < 1e-12);
     }
 
     #[test]
     fn entropy_value() {
         let h = entropy(ETA1);
-        let expected = -0.7 * 0.7_f64.ln() - 0.3 * 0.3_f64.ln();
+        let expected = (-0.7_f64).mul_add(0.7_f64.ln(), -0.3 * 0.3_f64.ln());
         assert!((h - expected).abs() < 1e-12);
     }
 
@@ -96,13 +97,13 @@ mod tests {
     #[test]
     fn extreme_values_converge() {
         // p ≈ 0 → η → −∞
-        let p = canonical(-30.0);
-        assert!(p < 1e-12);
+        let p_low = canonical(-30.0);
+        assert!(p_low < 1e-12);
         assert!(entropy(-30.0).abs() < 1e-10);
 
         // p ≈ 1 → η → +∞
-        let p = canonical(30.0);
-        assert!((p - 1.0).abs() < 1e-12);
+        let p_high = canonical(30.0);
+        assert!((p_high - 1.0).abs() < 1e-12);
         assert!(entropy(30.0).abs() < 1e-10);
     }
 }
