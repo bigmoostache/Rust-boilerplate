@@ -182,6 +182,9 @@ pub enum ObservationDef {
         node: String,
         /// Observed value.
         value: bool,
+        /// Number of identical trials (strength of evidence). Defaults to 1.
+        #[serde(default)]
+        count: Option<u32>,
     },
 
     /// Beta proportion observation.

@@ -49,10 +49,26 @@ pub(super) fn validate_observation(
             node.clone(),
             Ok(Observation::PoissonCount { count: *count }),
         ),
-        ObservationDef::BernoulliExact { node, value } => (
-            node.clone(),
-            Ok(Observation::BernoulliExact { value: *value }),
-        ),
+        ObservationDef::BernoulliExact { node, value, count } => {
+            let c = count.unwrap_or(1);
+            if c == 0 {
+                (
+                    node.clone(),
+                    Err(vec![SchemaError {
+                        path: format!("{path}.count"),
+                        message: "count must be > 0".to_owned(),
+                    }]),
+                )
+            } else {
+                (
+                    node.clone(),
+                    Ok(Observation::BernoulliExact {
+                        value: *value,
+                        count: c,
+                    }),
+                )
+            }
+        }
         ObservationDef::BetaProportion {
             node,
             value,

@@ -40,12 +40,19 @@ pub enum Observation {
         count: u64,
     },
 
-    /// Binary observation.
+    /// Binary observation with strength.
+    ///
+    /// Models `count` independent Bernoulli trials all yielding the
+    /// same outcome.  `count = 1` is a single observation;
+    /// `count = 10` is like seeing the same result 10 times,
+    /// giving a much stronger evidence push.
     ///
     /// Compatible with: Bernoulli nodes.
     BernoulliExact {
         /// Observed value.
         value: bool,
+        /// Number of identical trials (strength of evidence).
+        count: u32,
     },
 
     /// Observed proportion with Beta-type likelihood.
@@ -117,13 +124,14 @@ impl Observation {
                 }
             }
 
-            (Self::BernoulliExact { value }, NaturalParams::Bernoulli { eta1 }) => {
-                // p(obs|x) = x^obs · (1−x)^(1−obs) where x = sigmoid(η)
-                // E[ln p] = obs·E[ln x] + (1−obs)·E[ln(1−x)]
+            (Self::BernoulliExact { value, count }, NaturalParams::Bernoulli { eta1 }) => {
+                // p(obs|x) = x^obs · (1−x)^(1−obs), repeated `count` times
+                // E[ln p] = count · (obs·E[ln x] + (1−obs)·E[ln(1−x)])
                 // For Bernoulli: E[ln x] = −softplus(−η), E[ln(1−x)] = −softplus(η)
+                let n = f64::from(*count);
                 let log_p = -softplus(-eta1);
                 let log_1mp = -softplus(*eta1);
-                if *value { log_p } else { log_1mp }
+                if *value { n * log_p } else { n * log_1mp }
             }
 
             (Self::PoissonCount { count }, NaturalParams::Poisson { eta1 }) => {
@@ -218,12 +226,18 @@ mod tests {
             eta1: (0.7_f64 / 0.3).ln(),
         };
         // Observing true → E[ln p(1|x)] = ln(0.7)
-        let obs_true = Observation::BernoulliExact { value: true };
+        let obs_true = Observation::BernoulliExact {
+            value: true,
+            count: 1,
+        };
         let ll = obs_true.expected_log_likelihood(&post);
         assert!((ll - 0.7_f64.ln()).abs() < 1e-10);
 
         // Observing false → E[ln p(0|x)] = ln(0.3)
-        let obs_false = Observation::BernoulliExact { value: false };
+        let obs_false = Observation::BernoulliExact {
+            value: false,
+            count: 1,
+        };
         let ll = obs_false.expected_log_likelihood(&post);
         assert!((ll - 0.3_f64.ln()).abs() < 1e-10);
     }

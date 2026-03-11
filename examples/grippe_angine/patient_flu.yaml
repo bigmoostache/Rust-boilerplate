@@ -16,16 +16,19 @@ observations:
   - type: bernoulli_exact
     node: headache
     value: true
+    count: 10
 
   # Sore throat: no
   - type: bernoulli_exact
     node: sore_throat
     value: false
+    count: 10
 
   # Body aches: yes — classic flu symptom
   - type: bernoulli_exact
     node: body_aches
     value: true
+    count: 10
 
 inference:
   max_iter: 500

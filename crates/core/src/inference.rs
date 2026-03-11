@@ -178,11 +178,10 @@ fn single_observation_gradient(post: &NaturalParams, obs: &Observation) -> DVect
         }
 
         // Bernoulli node + Bernoulli observation: exact
-        (NaturalParams::Bernoulli { .. }, Observation::BernoulliExact { value }) => {
-            // ln p(obs|x) = obs·ln(x) + (1−obs)·ln(1−x)
-            // = obs·η − ln(1+exp(η)) + const
-            // The η contribution from the observation is just obs (0 or 1)
-            let v = if *value { 1.0 } else { 0.0 };
+        (NaturalParams::Bernoulli { .. }, Observation::BernoulliExact { value, count }) => {
+            // ln p(obs|x) = obs·ln(x) + (1−obs)·ln(1−x), repeated count times
+            // The η contribution is count · obs (0 or count)
+            let v = if *value { f64::from(*count) } else { 0.0 };
             DVector::from_vec(vec![v])
         }
 
@@ -409,7 +408,10 @@ mod tests {
         let mut graph = Graph::new(vec![node], vec![]);
         graph.add_observation(
             "test".to_owned(),
-            Observation::BernoulliExact { value: true },
+            Observation::BernoulliExact {
+                value: true,
+                count: 1,
+            },
         );
 
         let result = coordinate_ascent(&mut graph, 100, 1e-10);
