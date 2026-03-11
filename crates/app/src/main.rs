@@ -149,21 +149,64 @@ fn run_infer(input_paths: &[String], output_path: Option<&str>) -> anyhow::Resul
     let result =
         app_core::inference::coordinate_ascent(&mut graph, config.max_iter, config.tolerance);
 
-    // Build and serialize output
+    // Build output
     let inference_result = app_core::schema::output::build_result(&graph, &result);
-    let output_yaml = app_core::schema::output::to_yaml(&inference_result)
-        .context("failed to serialize output")?;
 
-    // Write output
+    // Write full YAML to file if requested
     if let Some(path) = output_path {
+        let output_yaml = app_core::schema::output::to_yaml(&inference_result)
+            .context("failed to serialize output")?;
         std::fs::write(path, &output_yaml)
             .with_context(|| format!("failed to write output file: {path}"))?;
+    }
+
+    // Always print human-readable summary to stdout
+    let mut stdout = std::io::stdout().lock();
+    if inference_result.converged {
+        let _r = writeln!(
+            stdout,
+            "Converged in {} iterations.\n",
+            inference_result.iterations
+        );
     } else {
-        let mut stdout = std::io::stdout().lock();
-        stdout
-            .write_all(output_yaml.as_bytes())
-            .context("failed to write to stdout")?;
+        let _r = writeln!(
+            stdout,
+            "Did NOT converge after {} iterations.\n",
+            inference_result.iterations
+        );
+    }
+    for posterior in &inference_result.posteriors {
+        let _r = writeln!(stdout, "- {}", format_posterior(posterior));
     }
 
     Ok(())
+}
+
+/// Format a node posterior as a short human-readable string.
+fn format_posterior(p: &app_core::schema::output::NodePosterior) -> String {
+    match &p.family {
+        app_core::schema::raw::FamilyDef::Gaussian { mu, sigma2 } => {
+            format!("{} (gaussian) mu={mu:.2}, sigma2={sigma2:.2}", p.name)
+        }
+        app_core::schema::raw::FamilyDef::Bernoulli { p: prob } => {
+            format!("{} (bernoulli) p={prob:.2}", p.name)
+        }
+        app_core::schema::raw::FamilyDef::Gamma { alpha, beta } => {
+            format!("{} (gamma) alpha={alpha:.2}, beta={beta:.2}", p.name)
+        }
+        app_core::schema::raw::FamilyDef::Beta { alpha, beta } => {
+            format!("{} (beta) alpha={alpha:.2}, beta={beta:.2}", p.name)
+        }
+        app_core::schema::raw::FamilyDef::Poisson { lambda } => {
+            format!("{} (poisson) lambda={lambda:.2}", p.name)
+        }
+        app_core::schema::raw::FamilyDef::Categorical { probs } => {
+            let ps: Vec<String> = probs.iter().map(|v| format!("{v:.2}")).collect();
+            format!("{} (categorical) probs=[{}]", p.name, ps.join(", "))
+        }
+        app_core::schema::raw::FamilyDef::Dirichlet { alpha } => {
+            let as_str: Vec<String> = alpha.iter().map(|v| format!("{v:.2}")).collect();
+            format!("{} (dirichlet) alpha=[{}]", p.name, as_str.join(", "))
+        }
+    }
 }
