@@ -8,6 +8,25 @@
 
 use nalgebra::DVector;
 
+use super::exp_family::ExponentialFamily;
+
+/// Marker type for the Categorical exponential family.
+pub(crate) struct CategoricalDist;
+
+impl ExponentialFamily for CategoricalDist {
+    fn log_partition(eta: &DVector<f64>) -> f64 {
+        log_partition(eta.as_slice())
+    }
+
+    fn expected_suff_stats(eta: &DVector<f64>) -> DVector<f64> {
+        expected_suff_stats(eta.as_slice())
+    }
+
+    fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
+        0.0
+    }
+}
+
 /// Recover class probabilities `(p_1, …, p_K)` from log-ratios.
 ///
 /// Uses the log-sum-exp trick for numerical stability.
@@ -31,28 +50,6 @@ pub(super) fn expected_suff_stats(eta: &[f64]) -> DVector<f64> {
     DVector::from_vec(stats.to_vec())
 }
 
-/// `H(Cat) = −Σ_k p_k ln p_k`.
-pub(super) fn entropy(eta: &[f64]) -> f64 {
-    let probs = probabilities(eta);
-    let mut h = 0.0;
-    for &p in &probs {
-        if p > 1e-15 {
-            h -= p * p.ln();
-        }
-    }
-    h
-}
-
-/// `E_self[ln p_other(x)]` where both are Categorical.
-///
-/// `= η_other · E_self[T(x)] − A(η_other)`
-pub(super) fn cross_entropy(me_eta: &[f64], other_eta: &[f64]) -> f64 {
-    let probs = probabilities(me_eta);
-    let a_other = log_partition(other_eta);
-    let dot: f64 = other_eta.iter().zip(probs.iter()).map(|(o, p)| o * p).sum();
-    dot - a_other
-}
-
 /// `A(η) = ln(1 + Σ exp(η_k))` = `log_sum_exp(η_1, …, η_{K−1}, 0)`.
 pub(super) fn log_partition(eta: &[f64]) -> f64 {
     let max_eta = eta.iter().copied().fold(0.0_f64, f64::max);
@@ -63,6 +60,7 @@ pub(super) fn log_partition(eta: &[f64]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
 
     /// Reference: Cat(K=3) with p = (0.2, 0.3, 0.5).
     /// η₁ = ln(0.2/0.5) = ln(0.4), η₂ = ln(0.3/0.5) = ln(0.6).
@@ -96,7 +94,8 @@ mod tests {
     #[test]
     fn entropy_value() {
         let eta = standard_eta();
-        let h = entropy(&eta);
+        let v = DVector::from_vec(eta);
+        let h = ef_h::<CategoricalDist>(&v);
         let expected = (-0.2_f64).mul_add(
             0.2_f64.ln(),
             (-0.3_f64).mul_add(0.3_f64.ln(), -0.5 * 0.5_f64.ln()),
@@ -107,8 +106,9 @@ mod tests {
     #[test]
     fn self_cross_entropy_equals_neg_entropy() {
         let eta = standard_eta();
-        let ce = cross_entropy(&eta, &eta);
-        let h = entropy(&eta);
+        let v = DVector::from_vec(eta);
+        let ce = ef_ce::<CategoricalDist>(&v, &v);
+        let h = ef_h::<CategoricalDist>(&v);
         assert!((ce + h).abs() < 1e-10);
     }
 
@@ -121,7 +121,8 @@ mod tests {
             assert!((p - 0.25).abs() < 1e-10);
         }
         // H(uniform K=4) = ln 4
-        let h = entropy(&eta);
+        let v = DVector::from_vec(eta);
+        let h = ef_h::<CategoricalDist>(&v);
         assert!((h - 4.0_f64.ln()).abs() < 1e-10);
     }
 }

@@ -206,14 +206,16 @@ impl Observation {
             // ── Dirichlet node + Dirichlet concentration ────────
             (
                 Self::DirichletConcentration { values, kappa },
-                NaturalParams::Dirichlet { alpha },
+                NaturalParams::Dirichlet { eta },
             ) => {
                 // Observation model: obs ~ Dir(κ·p) where p = E[x] = α/Σα
+                // Convert natural params back to α: α_k = η_k + 1
+                let alpha: Vec<f64> = eta.iter().map(|&e| e + 1.0).collect();
                 let alpha_sum: f64 = alpha.iter().sum();
                 // Σ κ·p_k = κ·Σp_k = κ since p sums to 1
                 let mut ll = lgamma(*kappa);
-                for (pk, vk) in alpha.iter().zip(values.iter()) {
-                    let mean_pk = pk / alpha_sum;
+                for (ak, vk) in alpha.iter().zip(values.iter()) {
+                    let mean_pk = ak / alpha_sum;
                     let a_k = kappa * mean_pk;
                     ll += (a_k - 1.0) * vk.max(1e-300).ln();
                     ll -= lgamma(a_k);

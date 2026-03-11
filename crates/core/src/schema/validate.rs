@@ -470,7 +470,7 @@ pub(super) fn validate_family(
                 }
             }
             errors.is_empty().then(|| NaturalParams::Dirichlet {
-                alpha: alpha.clone(),
+                eta: alpha.iter().map(|a| a - 1.0).collect(),
             })
         }
     };

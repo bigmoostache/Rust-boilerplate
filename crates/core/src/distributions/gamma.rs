@@ -6,6 +6,29 @@
 
 use nalgebra::DVector;
 
+use super::exp_family::ExponentialFamily;
+
+/// Marker type for the Gamma exponential family.
+pub(crate) struct GammaDist;
+
+impl ExponentialFamily for GammaDist {
+    fn log_partition(eta: &DVector<f64>) -> f64 {
+        let e1 = eta.get(0).copied().unwrap_or(0.0);
+        let e2 = eta.get(1).copied().unwrap_or(-1.0);
+        log_partition(e1, e2)
+    }
+
+    fn expected_suff_stats(eta: &DVector<f64>) -> DVector<f64> {
+        let e1 = eta.get(0).copied().unwrap_or(0.0);
+        let e2 = eta.get(1).copied().unwrap_or(-1.0);
+        expected_suff_stats(e1, e2)
+    }
+
+    fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
+        0.0
+    }
+}
+
 /// Canonical parameters: `(α, β)`.
 fn canonical(eta1: f64, eta2: f64) -> (f64, f64) {
     let alpha = eta1 + 1.0;
@@ -43,23 +66,6 @@ pub(crate) fn digamma(x: f64) -> f64 {
 pub(super) fn expected_suff_stats(eta1: f64, eta2: f64) -> DVector<f64> {
     let (alpha, beta) = canonical(eta1, eta2);
     DVector::from_vec(vec![digamma(alpha) - beta.ln(), alpha / beta])
-}
-
-/// `H(Gamma(α,β)) = α − ln β + ln Γ(α) + (1 − α) ψ(α)`.
-pub(super) fn entropy(eta1: f64, eta2: f64) -> f64 {
-    let (alpha, beta) = canonical(eta1, eta2);
-    (1.0 - alpha).mul_add(digamma(alpha), alpha - beta.ln() + lgamma(alpha))
-}
-
-/// `E_self[ln p_other(x)]` where both are Gamma.
-///
-/// Uses direct field computation to avoid `DVector` indexing.
-pub(super) fn cross_entropy(me_eta1: f64, me_eta2: f64, other_eta1: f64, other_eta2: f64) -> f64 {
-    let (me_alpha, me_beta) = canonical(me_eta1, me_eta2);
-    let e_ln_x = digamma(me_alpha) - me_beta.ln();
-    let e_x = me_alpha / me_beta;
-    let a_other = log_partition(other_eta1, other_eta2);
-    other_eta1.mul_add(e_ln_x, other_eta2 * e_x) - a_other
 }
 
 /// `A(η) = ln Γ(η₁ + 1) − (η₁ + 1) ln(−η₂)`.
@@ -105,6 +111,7 @@ pub(crate) fn lgamma(x: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
 
     /// Reference: Gamma(α=3, β=2) → η₁=2, η₂=−2.
     const ETA1: f64 = 2.0;
@@ -131,8 +138,9 @@ mod tests {
 
     #[test]
     fn self_cross_entropy_equals_neg_entropy() {
-        let ce = cross_entropy(ETA1, ETA2, ETA1, ETA2);
-        let h = entropy(ETA1, ETA2);
+        let eta = DVector::from_vec(vec![ETA1, ETA2]);
+        let ce = ef_ce::<GammaDist>(&eta, &eta);
+        let h = ef_h::<GammaDist>(&eta);
         assert!((ce + h).abs() < 1e-10);
     }
 

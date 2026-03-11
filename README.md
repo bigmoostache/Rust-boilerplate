@@ -61,7 +61,7 @@ Les observations s'ajoutent comme des potentiels nodaux supplémentaires dans $\
 
 ### Résultat
 
-$$\boxed{\mathcal{F}(\Theta^{\text{post}}, \Theta^{\text{relax}}, \boldsymbol{\beta}, \mathcal{O}) = \underbrace{\sum_{(i,j)} \beta_{ij} \cdot \mathbb{E}_{\theta_i^{\text{post}}}[T_i] \cdot \mathbb{E}_{\theta_j^{\text{post}}}[T_j]}_{\text{couplages}} + \underbrace{\sum_i \mathbb{E}_{\theta_i^{\text{post}}}[\log p_{\theta_i^{\text{relax}}}]}_{\text{priors relaxés}} + \underbrace{\sum_i \sum_{k \in \mathcal{O}_i} \mathbb{E}_{\theta_i^{\text{post}}}[\log p_{\varepsilon_k}]}_{\text{observations}} + \underbrace{\sum_i \mathbb{H}(p_{\theta_i^{\text{post}}})}_{\text{entropie}}}$$
+$$\boxed{\mathcal{F}(\Theta^{\text{post}}, \Theta^{\text{relax}}, \boldsymbol{\beta}, \mathcal{O}) = \underbrace{\sum_{(i,j)} \mathbb{E}_{\theta_i^{\text{post}}}[T_i]^T \, B_{ij} \, \mathbb{E}_{\theta_j^{\text{post}}}[T_j]}_{\text{couplages}} + \underbrace{\sum_i \mathbb{E}_{\theta_i^{\text{post}}}[\log p_{\theta_i^{\text{relax}}}]}_{\text{priors relaxés}} + \underbrace{\sum_i \sum_{k \in \mathcal{O}_i} \mathbb{E}_{\theta_i^{\text{post}}}[\log p_{\varepsilon_k}]}_{\text{observations}} + \underbrace{\sum_i \mathbb{H}(p_{\theta_i^{\text{post}}})}_{\text{entropie}}}$$
 
 - **Entièrement analytique** pour toutes les familles exponentielles
 - $Z$ éliminé — pas d'intractabilité résiduelle dans l'objectif

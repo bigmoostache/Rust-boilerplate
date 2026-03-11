@@ -6,6 +6,27 @@
 
 use nalgebra::DVector;
 
+use super::exp_family::ExponentialFamily;
+
+/// Marker type for the Bernoulli exponential family.
+pub(crate) struct Bernoulli;
+
+impl ExponentialFamily for Bernoulli {
+    fn log_partition(eta: &DVector<f64>) -> f64 {
+        let e1 = eta.get(0).copied().unwrap_or(0.0);
+        log_partition(e1)
+    }
+
+    fn expected_suff_stats(eta: &DVector<f64>) -> DVector<f64> {
+        let e1 = eta.get(0).copied().unwrap_or(0.0);
+        expected_suff_stats(e1)
+    }
+
+    fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
+        0.0
+    }
+}
+
 /// Canonical parameter: `p = sigmoid(η₁) = 1/(1 + exp(−η₁))`.
 fn canonical(eta1: f64) -> f64 {
     // Numerically stable sigmoid
@@ -23,25 +44,6 @@ pub(super) fn expected_suff_stats(eta1: f64) -> DVector<f64> {
     DVector::from_vec(vec![canonical(eta1)])
 }
 
-/// `H(Bernoulli(p)) = −p ln p − (1−p) ln(1−p)`.
-pub(super) fn entropy(eta1: f64) -> f64 {
-    let p = canonical(eta1);
-    if !(1e-15..=1.0 - 1e-15).contains(&p) {
-        return 0.0; // Degenerate
-    }
-    (-p).mul_add(p.ln(), -(1.0 - p) * (1.0 - p).ln())
-}
-
-/// `E_self[ln p_other(x)]` where both are Bernoulli.
-///
-/// `= η_other · E_self[T(x)] − A(η_other)`
-/// `= η₁' · p − ln(1 + exp(η₁'))`
-pub(super) fn cross_entropy(me_eta1: f64, other_eta1: f64) -> f64 {
-    let p = canonical(me_eta1);
-    let a_other = log_partition(other_eta1);
-    other_eta1.mul_add(p, -a_other)
-}
-
 /// `A(η) = ln(1 + exp(η₁))` (softplus).
 pub(super) fn log_partition(eta1: f64) -> f64 {
     // Numerically stable softplus: ln(1 + exp(η))
@@ -55,6 +57,7 @@ pub(super) fn log_partition(eta1: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
 
     /// Reference: Bernoulli(p=0.7) → η₁ = logit(0.7) = ln(7/3).
     const ETA1: f64 = 0.847_297_860_387_203_8; // ln(7/3)
@@ -74,15 +77,17 @@ mod tests {
 
     #[test]
     fn entropy_value() {
-        let h = entropy(ETA1);
+        let eta = DVector::from_vec(vec![ETA1]);
+        let h = ef_h::<Bernoulli>(&eta);
         let expected = (-0.7_f64).mul_add(0.7_f64.ln(), -0.3 * 0.3_f64.ln());
         assert!((h - expected).abs() < 1e-12);
     }
 
     #[test]
     fn self_cross_entropy_equals_neg_entropy() {
-        let ce = cross_entropy(ETA1, ETA1);
-        let h = entropy(ETA1);
+        let eta = DVector::from_vec(vec![ETA1]);
+        let ce = ef_ce::<Bernoulli>(&eta, &eta);
+        let h = ef_h::<Bernoulli>(&eta);
         assert!((ce + h).abs() < 1e-12);
     }
 
@@ -99,11 +104,13 @@ mod tests {
         // p ≈ 0 → η → −∞
         let p_low = canonical(-30.0);
         assert!(p_low < 1e-12);
-        assert!(entropy(-30.0).abs() < 1e-10);
+        let eta_low = DVector::from_vec(vec![-30.0]);
+        assert!(ef_h::<Bernoulli>(&eta_low).abs() < 1e-10);
 
         // p ≈ 1 → η → +∞
         let p_high = canonical(30.0);
         assert!((p_high - 1.0).abs() < 1e-12);
-        assert!(entropy(30.0).abs() < 1e-10);
+        let eta_high = DVector::from_vec(vec![30.0]);
+        assert!(ef_h::<Bernoulli>(&eta_high).abs() < 1e-10);
     }
 }

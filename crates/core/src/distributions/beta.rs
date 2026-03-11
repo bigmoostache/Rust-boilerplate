@@ -9,6 +9,29 @@ use nalgebra::DVector;
 // Re-use lgamma and digamma from the gamma module.
 use super::gamma::{digamma, lgamma};
 
+use super::exp_family::ExponentialFamily;
+
+/// Marker type for the Beta exponential family.
+pub(crate) struct BetaDist;
+
+impl ExponentialFamily for BetaDist {
+    fn log_partition(eta: &DVector<f64>) -> f64 {
+        let e1 = eta.get(0).copied().unwrap_or(0.0);
+        let e2 = eta.get(1).copied().unwrap_or(0.0);
+        log_partition(e1, e2)
+    }
+
+    fn expected_suff_stats(eta: &DVector<f64>) -> DVector<f64> {
+        let e1 = eta.get(0).copied().unwrap_or(0.0);
+        let e2 = eta.get(1).copied().unwrap_or(0.0);
+        expected_suff_stats(e1, e2)
+    }
+
+    fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
+        0.0
+    }
+}
+
 /// Canonical parameters: `(α, β)`.
 fn canonical(eta1: f64, eta2: f64) -> (f64, f64) {
     let alpha = eta1 + 1.0;
@@ -23,31 +46,6 @@ pub(super) fn expected_suff_stats(eta1: f64, eta2: f64) -> DVector<f64> {
     DVector::from_vec(vec![digamma(alpha) - psi_sum, digamma(beta) - psi_sum])
 }
 
-/// `H(Beta(α,β)) = ln B(α,β) − (α−1)ψ(α) − (β−1)ψ(β) + (α+β−2)ψ(α+β)`.
-///
-/// where `ln B(α,β) = ln Γ(α) + ln Γ(β) − ln Γ(α+β)`.
-pub(super) fn entropy(eta1: f64, eta2: f64) -> f64 {
-    let (alpha, beta) = canonical(eta1, eta2);
-    let ln_beta_fn = lgamma(alpha) + lgamma(beta) - lgamma(alpha + beta);
-    let psi_sum = digamma(alpha + beta);
-    (alpha + beta - 2.0).mul_add(
-        psi_sum,
-        ln_beta_fn - (alpha - 1.0).mul_add(digamma(alpha), (beta - 1.0) * digamma(beta)),
-    )
-}
-
-/// `E_self[ln p_other(x)]` where both are Beta.
-///
-/// Uses direct field computation to avoid `DVector` indexing.
-pub(super) fn cross_entropy(me_eta1: f64, me_eta2: f64, other_eta1: f64, other_eta2: f64) -> f64 {
-    let (me_alpha, me_beta) = canonical(me_eta1, me_eta2);
-    let psi_sum = digamma(me_alpha + me_beta);
-    let e_ln_x = digamma(me_alpha) - psi_sum;
-    let e_ln_1mx = digamma(me_beta) - psi_sum;
-    let a_other = log_partition(other_eta1, other_eta2);
-    other_eta1.mul_add(e_ln_x, other_eta2 * e_ln_1mx) - a_other
-}
-
 /// `A(η) = ln Γ(η₁+1) + ln Γ(η₂+1) − ln Γ(η₁+η₂+2)`.
 pub(super) fn log_partition(eta1: f64, eta2: f64) -> f64 {
     let (alpha, beta) = canonical(eta1, eta2);
@@ -57,6 +55,7 @@ pub(super) fn log_partition(eta1: f64, eta2: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
 
     /// Reference: Beta(α=2, β=5) → η₁=1, η₂=4.
     const ETA1: f64 = 1.0;
@@ -83,8 +82,9 @@ mod tests {
 
     #[test]
     fn self_cross_entropy_equals_neg_entropy() {
-        let ce = cross_entropy(ETA1, ETA2, ETA1, ETA2);
-        let h = entropy(ETA1, ETA2);
+        let eta = DVector::from_vec(vec![ETA1, ETA2]);
+        let ce = ef_ce::<BetaDist>(&eta, &eta);
+        let h = ef_h::<BetaDist>(&eta);
         assert!((ce + h).abs() < 1e-10);
     }
 

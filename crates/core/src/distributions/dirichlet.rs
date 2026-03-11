@@ -1,19 +1,38 @@
 //! Dirichlet distribution — closed-form computations.
 //!
 //! The Dirichlet is parameterized by concentration `α_k > 0` for
-//! `k = 1, …, K`. It's not a standard exponential family in the
-//! textbook sense (the base measure depends on the simplex constraint),
-//! but we treat `α` as the "natural-like" parameters since
-//! `T(x) = (ln x_1, …, ln x_K)` and the density writes
-//! `p(x; α) ∝ exp(Σ (α_k − 1) ln x_k)`, giving
-//! effective natural params `η_k = α_k − 1`.
+//! `k = 1, …, K`. We store the **true natural parameters**
+//! `η_k = α_k − 1`, so `α_k = η_k + 1`.
 //!
 //! Sufficient statistics: `T(x) = (ln x_1, …, ln x_K)`, dimension `d = K`.
-//! Log-partition: `A(α) = Σ ln Γ(α_k) − ln Γ(Σ α_k)`.
+//! Log-partition: `A(η) = Σ ln Γ(η_k + 1) − ln Γ(Σ (η_k + 1))`.
+//! Base measure: `h(x) = 1_{x ∈ simplex}` — since it doesn't depend
+//! on `η`, `E[ln h(x)] = 0`.
 
 use nalgebra::DVector;
 
 use super::gamma::{digamma, lgamma};
+
+use super::exp_family::ExponentialFamily;
+
+/// Marker type for the Dirichlet exponential family.
+pub(crate) struct DirichletDist;
+
+impl ExponentialFamily for DirichletDist {
+    fn log_partition(eta: &DVector<f64>) -> f64 {
+        let alpha: Vec<f64> = eta.iter().map(|&e| e + 1.0).collect();
+        log_partition(&alpha)
+    }
+
+    fn expected_suff_stats(eta: &DVector<f64>) -> DVector<f64> {
+        let alpha: Vec<f64> = eta.iter().map(|&e| e + 1.0).collect();
+        expected_suff_stats(&alpha)
+    }
+
+    fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
+        0.0
+    }
+}
 
 /// `E[T(x)] = (E[ln x_1], …, E[ln x_K])`.
 ///
@@ -22,35 +41,6 @@ pub(super) fn expected_suff_stats(alpha: &[f64]) -> DVector<f64> {
     let alpha_sum: f64 = alpha.iter().sum();
     let psi_sum = digamma(alpha_sum);
     DVector::from_vec(alpha.iter().map(|&a| digamma(a) - psi_sum).collect())
-}
-
-/// Dirichlet entropy.
-///
-/// `H = ln B(α) + (α₀ − K) ψ(α₀) − Σ (α_k − 1) ψ(α_k)`
-///
-/// where `α₀ = Σ α_k` and `ln B(α) = Σ ln Γ(α_k) − ln Γ(α₀)`.
-pub(super) fn entropy(alpha: &[f64]) -> f64 {
-    let k = f64::from(u32::try_from(alpha.len()).unwrap_or(u32::MAX));
-    let alpha_sum: f64 = alpha.iter().sum();
-    let ln_beta = alpha.iter().map(|&a| lgamma(a)).sum::<f64>() - lgamma(alpha_sum);
-    let psi_sum = digamma(alpha_sum);
-    let sum_term: f64 = alpha.iter().map(|&a| (a - 1.0) * digamma(a)).sum();
-    (alpha_sum - k).mul_add(psi_sum, ln_beta) - sum_term
-}
-
-/// `E_self[ln p_other(x)]` where both are Dirichlet.
-///
-/// For Dirichlet, the effective natural params are `η_k = α_k − 1`,
-/// so: `E_self[ln p_other] = Σ (α'_k − 1) E[ln x_k] − A(α')`
-pub(super) fn cross_entropy(me_alpha: &[f64], other_alpha: &[f64]) -> f64 {
-    let t = expected_suff_stats(me_alpha);
-    let a_other = log_partition(other_alpha);
-    let dot: f64 = other_alpha
-        .iter()
-        .zip(t.iter())
-        .map(|(&a, ti)| (a - 1.0) * ti)
-        .sum();
-    dot - a_other
 }
 
 /// `A(α) = Σ ln Γ(α_k) − ln Γ(Σ α_k)`.
@@ -62,9 +52,11 @@ pub(super) fn log_partition(alpha: &[f64]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
 
-    /// Reference: Dirichlet(α = (2, 3, 5)).
+    /// Reference: Dirichlet(α = (2, 3, 5)) → η = (1, 2, 4).
     const ALPHA: [f64; 3] = [2.0, 3.0, 5.0];
+    const ETA: [f64; 3] = [1.0, 2.0, 4.0]; // α − 1
 
     #[test]
     fn suff_stats_dim() {
@@ -88,8 +80,9 @@ mod tests {
 
     #[test]
     fn self_cross_entropy_equals_neg_entropy() {
-        let ce = cross_entropy(&ALPHA, &ALPHA);
-        let h = entropy(&ALPHA);
+        let eta = DVector::from_vec(ETA.to_vec());
+        let ce = ef_ce::<DirichletDist>(&eta, &eta);
+        let h = ef_h::<DirichletDist>(&eta);
         assert!(
             (ce + h).abs() < 1e-10,
             "ce={ce}, -h={}, diff={}",

@@ -6,6 +6,29 @@
 
 use nalgebra::DVector;
 
+use super::exp_family::ExponentialFamily;
+
+/// Marker type for the Gaussian exponential family.
+pub(crate) struct Gaussian;
+
+impl ExponentialFamily for Gaussian {
+    fn log_partition(eta: &DVector<f64>) -> f64 {
+        let e1 = eta.get(0).copied().unwrap_or(0.0);
+        let e2 = eta.get(1).copied().unwrap_or(-0.5);
+        log_partition(e1, e2)
+    }
+
+    fn expected_suff_stats(eta: &DVector<f64>) -> DVector<f64> {
+        let e1 = eta.get(0).copied().unwrap_or(0.0);
+        let e2 = eta.get(1).copied().unwrap_or(-0.5);
+        expected_suff_stats(e1, e2)
+    }
+
+    fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
+        0.0
+    }
+}
+
 /// Canonical parameters `(μ, σ²)` recovered from natural form.
 fn canonical(eta1: f64, eta2: f64) -> (f64, f64) {
     let sigma2 = -1.0 / (2.0 * eta2);
@@ -19,24 +42,6 @@ pub(super) fn expected_suff_stats(eta1: f64, eta2: f64) -> DVector<f64> {
     DVector::from_vec(vec![mu, mu.mul_add(mu, sigma2)])
 }
 
-/// `H = ½ ln(2πeσ²)`.
-pub(super) fn entropy(eta1: f64, eta2: f64) -> f64 {
-    let (_, sigma2) = canonical(eta1, eta2);
-    0.5 * (2.0 * std::f64::consts::PI * std::f64::consts::E * sigma2).ln()
-}
-
-/// `E_self[ln p_other(x)]` where both are Gaussian.
-///
-/// `= η_other · E_self[T(x)] − A(η_other)`
-/// `= η₁' · E[x] + η₂' · E[x²] − A(η')`
-pub(super) fn cross_entropy(me_eta1: f64, me_eta2: f64, other_eta1: f64, other_eta2: f64) -> f64 {
-    let (mu, sigma2) = canonical(me_eta1, me_eta2);
-    let e_x = mu;
-    let e_x2 = mu.mul_add(mu, sigma2);
-    let a_other = log_partition(other_eta1, other_eta2);
-    other_eta1.mul_add(e_x, other_eta2 * e_x2) - a_other
-}
-
 /// `A(η) = −η₁²/(4η₂) + ½ ln(−π/η₂)`.
 pub(super) fn log_partition(eta1: f64, eta2: f64) -> f64 {
     let quadratic = -eta1 * eta1 / (4.0 * eta2);
@@ -46,6 +51,7 @@ pub(super) fn log_partition(eta1: f64, eta2: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
 
     /// Reference: N(3, 4) → μ=3, σ²=4, η₁ = 0.75, η₂ = −0.125.
     const ETA1: f64 = 0.75;
@@ -71,15 +77,17 @@ mod tests {
     #[test]
     fn entropy_value() {
         // H(N(μ,σ²)) = ½ ln(2πeσ²) = ½ ln(2πe·4)
-        let h = entropy(ETA1, ETA2);
+        let eta = DVector::from_vec(vec![ETA1, ETA2]);
+        let h = ef_h::<Gaussian>(&eta);
         let expected = 0.5 * (2.0 * std::f64::consts::PI * std::f64::consts::E * 4.0).ln();
         assert!((h - expected).abs() < 1e-12);
     }
 
     #[test]
     fn self_cross_entropy_equals_neg_entropy() {
-        let ce = cross_entropy(ETA1, ETA2, ETA1, ETA2);
-        let h = entropy(ETA1, ETA2);
+        let eta = DVector::from_vec(vec![ETA1, ETA2]);
+        let ce = ef_ce::<Gaussian>(&eta, &eta);
+        let h = ef_h::<Gaussian>(&eta);
         assert!((ce + h).abs() < 1e-12);
     }
 
