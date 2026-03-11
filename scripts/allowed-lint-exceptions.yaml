@@ -1,0 +1,18 @@
+# Curated list of allowed #[expect(...)] and #[allow(...)] annotations.
+#
+# Every occurrence in the codebase MUST have an entry here, or the
+# structure-check will fire an ERROR. This keeps lint suppression
+# intentional, visible, and continuously reviewed.
+#
+# Fields:
+#   path          — file path relative to repo root
+#   match         — exact string that appears on the annotation line(s)
+#   reason        — why this exception is currently accepted
+#   strategy      — ideas to eventually eliminate it
+#
+# To add a new exception: append an entry, run the structure-check,
+# and ensure it passes. To remove one: delete the entry AND the
+# annotation from the source code.
+
+exceptions: []
+
