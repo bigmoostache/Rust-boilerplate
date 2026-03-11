@@ -269,4 +269,10 @@ pub struct InferenceDef {
     pub tolerance: f64,
     /// Time since last inference step (for relaxation).
     pub delta_t: f64,
+    /// Entropy scaling factor `λ` (defaults to 1.0).
+    ///
+    /// `λ > 1` → higher entropy → softer posteriors (more uncertain).
+    /// `λ < 1` → lower entropy → sharper posteriors (more confident).
+    /// `λ = 1` → standard variational inference.
+    pub entropy_scale: Option<f64>,
 }

@@ -43,14 +43,20 @@ pub struct ConvergenceResult {
 /// * `graph` — the patient graph (posteriors are modified in place)
 /// * `max_iter` — maximum sweeps over all nodes
 /// * `tol` — convergence threshold on max parameter change
-pub fn coordinate_ascent(graph: &mut Graph, max_iter: usize, tol: f64) -> ConvergenceResult {
+/// * `entropy_scale` — entropy scaling factor `λ` (1.0 = standard VI)
+pub fn coordinate_ascent(
+    graph: &mut Graph,
+    max_iter: usize,
+    tol: f64,
+    entropy_scale: f64,
+) -> ConvergenceResult {
     let mut elbo_history = Vec::with_capacity(max_iter);
 
     for iter in 0..max_iter {
         let mut max_change = 0.0_f64;
 
         for node_idx in 0..graph.num_nodes() {
-            let new_eta = compute_optimal_eta(graph, node_idx);
+            let new_eta = compute_optimal_eta(graph, node_idx, entropy_scale);
             if let Some(node) = graph.nodes.get(node_idx) {
                 let old_eta = node.post.eta_vector();
                 let change = (&new_eta - &old_eta).norm();
@@ -64,7 +70,7 @@ pub fn coordinate_ascent(graph: &mut Graph, max_iter: usize, tol: f64) -> Conver
             }
         }
 
-        let elbo = graph.elbo();
+        let elbo = graph.elbo_scaled(entropy_scale);
         elbo_history.push(elbo.total());
 
         if max_change < tol {
@@ -78,7 +84,7 @@ pub fn coordinate_ascent(graph: &mut Graph, max_iter: usize, tol: f64) -> Conver
         }
     }
 
-    let elbo = graph.elbo();
+    let elbo = graph.elbo_scaled(entropy_scale);
     elbo_history.push(elbo.total());
 
     ConvergenceResult {
@@ -93,10 +99,14 @@ pub fn coordinate_ascent(graph: &mut Graph, max_iter: usize, tol: f64) -> Conver
 /// Compute the optimal natural parameters for node `node_idx`,
 /// given all other nodes' current posteriors.
 ///
+/// With entropy scale `λ`, the update becomes:
+///
 /// ```text
-/// η_i^{new} = η_i^{relax} + Σ_{j} coupling_contribution_j + obs_contribution
+/// η_i^{new} = (1/λ) · (η_i^{relax} + Σ_{j} coupling_j + obs_grad)
 /// ```
-fn compute_optimal_eta(graph: &Graph, node_idx: usize) -> DVector<f64> {
+///
+/// When `λ = 1`, this is standard mean-field variational inference.
+fn compute_optimal_eta(graph: &Graph, node_idx: usize, entropy_scale: f64) -> DVector<f64> {
     let Some(node) = graph.nodes.get(node_idx) else {
         return DVector::zeros(0);
     };
@@ -130,6 +140,16 @@ fn compute_optimal_eta(graph: &Graph, node_idx: usize) -> DVector<f64> {
         for i in 0..eta.len().min(obs_gradient.len()) {
             if let (Some(dst), Some(src)) = (eta.get_mut(i), obs_gradient.get(i)) {
                 *dst += *src;
+            }
+        }
+    }
+
+    // Apply entropy scaling: η_new = (1/λ) · (η_relax + coupling + obs)
+    if (entropy_scale - 1.0).abs() > f64::EPSILON {
+        let inv_lambda = 1.0 / entropy_scale;
+        for i in 0..eta.len() {
+            if let Some(v) = eta.get_mut(i) {
+                *v *= inv_lambda;
             }
         }
     }
@@ -251,7 +271,7 @@ mod tests {
     #[test]
     fn single_node_no_obs() {
         let mut graph = Graph::new(vec![make_gaussian_node("A", 0.0, 1.0)], vec![]);
-        let result = coordinate_ascent(&mut graph, 100, 1e-10);
+        let result = coordinate_ascent(&mut graph, 100, 1e-10, 1.0);
 
         assert!(result.converged);
         assert_eq!(result.iterations, 1);
@@ -281,7 +301,7 @@ mod tests {
             },
         );
 
-        let result = coordinate_ascent(&mut graph, 100, 1e-10);
+        let result = coordinate_ascent(&mut graph, 100, 1e-10, 1.0);
         assert!(result.converged);
 
         let post = &graph.nodes.first().map(|n| &n.post);
@@ -319,7 +339,7 @@ mod tests {
             },
         );
 
-        let result = coordinate_ascent(&mut graph, 100, 1e-8);
+        let result = coordinate_ascent(&mut graph, 100, 1e-8, 1.0);
         assert!(result.converged, "did not converge in 100 iterations");
 
         let eta_a = graph.nodes.first().map(|n| n.post.eta_vector());
@@ -367,7 +387,7 @@ mod tests {
             },
         );
 
-        let result = coordinate_ascent(&mut graph, 50, 1e-10);
+        let result = coordinate_ascent(&mut graph, 50, 1e-10, 1.0);
 
         for pair in result.elbo_history.windows(2) {
             if let (Some(prev), Some(next)) = (pair.first(), pair.get(1)) {
@@ -396,7 +416,7 @@ mod tests {
             },
         );
 
-        let result = coordinate_ascent(&mut graph, 100, 1e-10);
+        let result = coordinate_ascent(&mut graph, 100, 1e-10, 1.0);
         assert!(result.converged);
 
         let eta = graph.nodes.first().map(|n| n.post.eta_vector());

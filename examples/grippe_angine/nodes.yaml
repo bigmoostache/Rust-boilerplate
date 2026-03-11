@@ -51,7 +51,7 @@ nodes:
         coupling: [[1.5]]
       # flu → body_aches (1×1): hallmark symptom
       - node: body_aches
-        coupling: [[2.0]]
+        coupling: [[1.0]]
       # flu ↔ tonsillitis (1×1): soft mutual exclusion
       - node: tonsillitis
         coupling: [[-0.3]]

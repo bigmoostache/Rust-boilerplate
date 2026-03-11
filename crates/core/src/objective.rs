@@ -36,17 +36,27 @@ impl ElboBreakdown {
 
 /// ELBO computation for the patient graph.
 pub trait Elbo {
-    /// Compute the full ELBO and its breakdown.
+    /// Compute the full ELBO and its breakdown with standard entropy (λ=1).
     fn elbo(&self) -> ElboBreakdown;
+
+    /// Compute the ELBO with a scaled entropy term.
+    ///
+    /// `entropy_scale = 1.0` gives standard variational inference.
+    /// Higher values produce softer (more uncertain) posteriors.
+    fn elbo_scaled(&self, entropy_scale: f64) -> ElboBreakdown;
 }
 
 impl Elbo for Graph {
     fn elbo(&self) -> ElboBreakdown {
+        self.elbo_scaled(1.0)
+    }
+
+    fn elbo_scaled(&self, entropy_scale: f64) -> ElboBreakdown {
         ElboBreakdown {
             coupling: coupling_term(self),
             prior: prior_term(self),
             observation: observation_term(self),
-            entropy: entropy_term(self),
+            entropy: entropy_scale * entropy_term(self),
         }
     }
 }

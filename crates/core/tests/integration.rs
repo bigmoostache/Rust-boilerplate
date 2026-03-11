@@ -105,7 +105,7 @@ mod integration_tests {
         );
 
         // Run inference
-        let result = coordinate_ascent(&mut graph, 200, 1e-10);
+        let result = coordinate_ascent(&mut graph, 200, 1e-10, 1.0);
 
         // 1. Must converge
         assert!(
@@ -180,7 +180,7 @@ mod integration_tests {
             );
         }
 
-        let result = coordinate_ascent(&mut graph, 100, 1e-12);
+        let result = coordinate_ascent(&mut graph, 100, 1e-12, 1.0);
         assert!(result.converged);
 
         // Bayesian update: prior N(0,1), 5 obs at x=2 with σ²_n=1
@@ -213,7 +213,7 @@ mod integration_tests {
             },
         );
 
-        let result = coordinate_ascent(&mut graph, 100, 1e-10);
+        let result = coordinate_ascent(&mut graph, 100, 1e-10, 1.0);
         assert!(result.converged);
 
         // After observing class 0 with ε=0, η₀ should increase (class 0 more likely)
@@ -274,7 +274,7 @@ inference:
             relax_graph(&mut graph, config.delta_t);
 
             // Infer
-            let inf_result = coordinate_ascent(&mut graph, config.max_iter, config.tolerance);
+            let inf_result = coordinate_ascent(&mut graph, config.max_iter, config.tolerance, 1.0);
             assert!(inf_result.converged, "inference did not converge");
 
             // Build output and serialize to YAML
@@ -315,7 +315,7 @@ inference:
                 noise_var: 1.0,
             },
         );
-        let r1 = coordinate_ascent(&mut graph, 100, 1e-12);
+        let r1 = coordinate_ascent(&mut graph, 100, 1e-12, 1.0);
         assert!(r1.converged);
 
         // Posterior after first inference: η₁=5, η₂=-1 → μ=2.5, σ²=0.5
@@ -335,7 +335,7 @@ inference:
 
         // Clear observations and reinfer (no new obs)
         graph.observations.clear();
-        let r2 = coordinate_ascent(&mut graph, 100, 1e-12);
+        let r2 = coordinate_ascent(&mut graph, 100, 1e-12, 1.0);
         assert!(r2.converged);
 
         // Without observations, posterior = relaxed prior
@@ -360,7 +360,7 @@ inference:
             },
         );
 
-        let result = coordinate_ascent(&mut graph, 100, 1e-12);
+        let result = coordinate_ascent(&mut graph, 100, 1e-12, 1.0);
         let output = build_result(&graph, &result);
         let yaml_result = to_yaml(&output);
         assert!(

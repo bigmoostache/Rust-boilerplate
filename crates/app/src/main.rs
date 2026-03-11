@@ -22,9 +22,10 @@ COMMANDS:
     infer    Run inference on a patient graph
 
 INFER OPTIONS:
-    -i, --input <PATH>     Path to a YAML input file (repeatable, merged in order)
-    -o, --output <PATH>    Path to write the output YAML (defaults to stdout)
-    -h, --help             Show this help message
+    -i, --input <PATH>         Path to a YAML input file (repeatable, merged in order)
+    -o, --output <PATH>        Path to write the output YAML (defaults to stdout)
+    --entropy_scale <FLOAT>    Entropy scaling factor λ (default: 1.0, from YAML if set)
+    -h, --help                 Show this help message
 
 EXAMPLES:
     app infer -i graph.yaml                              # single file
@@ -44,6 +45,8 @@ enum Command {
         inputs: Vec<String>,
         /// Optional output YAML path.
         output: Option<String>,
+        /// Entropy scaling factor (overrides YAML if provided).
+        entropy_scale: Option<f64>,
     },
 }
 
@@ -64,6 +67,7 @@ fn parse_args() -> Option<Command> {
         let rest = args.get(1..).unwrap_or_default();
         let mut inputs: Vec<String> = Vec::new();
         let mut output: Option<String> = None;
+        let mut entropy_scale: Option<f64> = None;
         let mut i = 0;
         while i < rest.len() {
             let arg = rest.get(i)?;
@@ -77,6 +81,12 @@ fn parse_args() -> Option<Command> {
                 "-o" | "--output" => {
                     i = i.checked_add(1)?;
                     output = rest.get(i).cloned();
+                }
+                "--entropy_scale" => {
+                    i = i.checked_add(1)?;
+                    if let Some(val) = rest.get(i) {
+                        entropy_scale = val.parse().ok();
+                    }
                 }
                 "-h" | "--help" => {
                     print_usage();
@@ -99,7 +109,11 @@ fn parse_args() -> Option<Command> {
             return None;
         }
 
-        Some(Command::Infer { inputs, output })
+        Some(Command::Infer {
+            inputs,
+            output,
+            entropy_scale,
+        })
     } else if subcommand == "-h" || subcommand == "--help" {
         print_usage();
         None
@@ -122,12 +136,20 @@ fn main() -> anyhow::Result<()> {
     };
 
     match command {
-        Command::Infer { inputs, output } => run_infer(&inputs, output.as_deref()),
+        Command::Infer {
+            inputs,
+            output,
+            entropy_scale,
+        } => run_infer(&inputs, output.as_deref(), entropy_scale),
     }
 }
 
 /// Execute the `infer` subcommand.
-fn run_infer(input_paths: &[String], output_path: Option<&str>) -> anyhow::Result<()> {
+fn run_infer(
+    input_paths: &[String],
+    output_path: Option<&str>,
+    cli_entropy_scale: Option<f64>,
+) -> anyhow::Result<()> {
     // Read all input YAMLs
     let mut yamls: Vec<String> = Vec::with_capacity(input_paths.len());
     for path in input_paths {
@@ -141,13 +163,20 @@ fn run_infer(input_paths: &[String], output_path: Option<&str>) -> anyhow::Resul
     let config = app_core::schema::validate::parse_yamls(&yaml_refs)
         .map_err(|errs| anyhow::anyhow!("{errs}"))?;
 
+    // CLI flag overrides YAML setting
+    let entropy_scale = cli_entropy_scale.unwrap_or(config.entropy_scale);
+
     // Apply temporal relaxation
     let mut graph = config.graph;
     app_core::temporal::relax_graph(&mut graph, config.delta_t);
 
     // Run inference
-    let result =
-        app_core::inference::coordinate_ascent(&mut graph, config.max_iter, config.tolerance);
+    let result = app_core::inference::coordinate_ascent(
+        &mut graph,
+        config.max_iter,
+        config.tolerance,
+        entropy_scale,
+    );
 
     // Build output
     let inference_result = app_core::schema::output::build_result(&graph, &result);

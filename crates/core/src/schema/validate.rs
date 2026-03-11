@@ -32,6 +32,8 @@ pub struct ValidatedConfig {
     pub tolerance: f64,
     /// Time gap for relaxation.
     pub delta_t: f64,
+    /// Entropy scaling factor `λ` (1.0 = standard VI).
+    pub entropy_scale: f64,
 }
 
 // ---------------------------------------------------------------------------
@@ -324,6 +326,14 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
             message: format!("delta_t must be >= 0, got {}", inference.delta_t),
         });
     }
+    if let Some(es) = inference.entropy_scale
+        && es <= 0.0
+    {
+        errors.push(SchemaError {
+            path: "inference.entropy_scale".to_owned(),
+            message: format!("entropy_scale must be > 0, got {es}"),
+        });
+    }
 
     // ── Return ──────────────────────────────────────────────────
     if !errors.is_empty() {
@@ -338,6 +348,7 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
         max_iter: inference.max_iter,
         tolerance: inference.tolerance,
         delta_t: inference.delta_t,
+        entropy_scale: inference.entropy_scale.unwrap_or(1.0),
     })
 }
 
