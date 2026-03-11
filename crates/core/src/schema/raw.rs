@@ -46,14 +46,28 @@ impl GraphConfig {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NodeDef {
-    /// Unique node identifier.
-    pub id: u32,
-    /// Human-readable name.
+    /// Human-readable name (unique identifier).
     pub name: String,
     /// Distribution family and canonical parameters.
     pub family: FamilyDef,
     /// Relaxation time constant `τ > 0`.
     pub tau: f64,
+    /// Inline outgoing edges: `this_node → target`.
+    #[serde(default)]
+    pub edges_to: Vec<InlineEdge>,
+    /// Inline incoming edges: `source → this_node`.
+    #[serde(default)]
+    pub edges_from: Vec<InlineEdge>,
+}
+
+/// An inline edge declared on a node definition.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InlineEdge {
+    /// The other node's name.
+    pub node: String,
+    /// Coupling matrix as row-major nested vectors.
+    pub coupling: Vec<Vec<f64>>,
 }
 
 /// Distribution family with canonical parameters.
@@ -120,23 +134,23 @@ pub enum FamilyDef {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EdgeDef {
-    /// Source node ID.
-    pub from: u32,
-    /// Target node ID.
-    pub to: u32,
+    /// Source node name.
+    pub from: String,
+    /// Target node name.
+    pub to: String,
     /// Coupling matrix as row-major nested vectors.
     pub coupling: Vec<Vec<f64>>,
 }
 
 /// An observation attached to a node.
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum ObservationDef {
     /// Gaussian noise observation.
     #[serde(rename = "gaussian_noise")]
     GaussianNoise {
-        /// Node ID.
-        node: u32,
+        /// Node name.
+        node: String,
         /// Observed value.
         value: f64,
         /// Noise variance (must be > 0).
@@ -146,8 +160,8 @@ pub enum ObservationDef {
     /// Exact categorical observation.
     #[serde(rename = "categorical_exact")]
     CategoricalExact {
-        /// Node ID.
-        node: u32,
+        /// Node name.
+        node: String,
         /// Observed category (0-based).
         category: usize,
     },
@@ -155,8 +169,8 @@ pub enum ObservationDef {
     /// Poisson count observation.
     #[serde(rename = "poisson_count")]
     PoissonCount {
-        /// Node ID.
-        node: u32,
+        /// Node name.
+        node: String,
         /// Observed count.
         count: u64,
     },
@@ -164,8 +178,8 @@ pub enum ObservationDef {
     /// Bernoulli exact observation.
     #[serde(rename = "bernoulli_exact")]
     BernoulliExact {
-        /// Node ID.
-        node: u32,
+        /// Node name.
+        node: String,
         /// Observed value.
         value: bool,
     },
@@ -173,8 +187,8 @@ pub enum ObservationDef {
     /// Beta proportion observation.
     #[serde(rename = "beta_proportion")]
     BetaProportion {
-        /// Node ID.
-        node: u32,
+        /// Node name.
+        node: String,
         /// Observed proportion in `(0, 1)`.
         value: f64,
         /// Concentration `κ > 0`.
@@ -184,8 +198,8 @@ pub enum ObservationDef {
     /// Gamma rate observation.
     #[serde(rename = "gamma_rate")]
     GammaRate {
-        /// Node ID.
-        node: u32,
+        /// Node name.
+        node: String,
         /// Observed positive value.
         value: f64,
         /// Shape of the observation noise.

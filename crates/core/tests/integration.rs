@@ -12,9 +12,8 @@ use app_core::schema::output::{build_result, to_yaml};
 use app_core::schema::validate::parse_yaml;
 use app_core::temporal::{advance_and_relax, relax_graph};
 
-fn make_node(id: u32, name: &str, params: NaturalParams, tau: f64) -> Node {
+fn make_node(name: &str, params: NaturalParams, tau: f64) -> Node {
     Node {
-        id,
         name: name.to_owned(),
         epidemio: params.clone(),
         prev: params.clone(),
@@ -25,38 +24,38 @@ fn make_node(id: u32, name: &str, params: NaturalParams, tau: f64) -> Node {
 }
 
 /// A 3-node graph with mixed families:
-/// - Node 0: Gaussian (systolic BP, μ=120, σ²=100)
-/// - Node 1: Bernoulli (hypertension diagnosis, p=0.3)
-/// - Node 2: Gaussian (BMI, μ=25, σ²=9)
+/// - Node "BP": Gaussian (systolic BP, μ=120, σ²=100)
+/// - Node "Hypertension": Bernoulli (hypertension diagnosis, p=0.3)
+/// - Node "BMI": Gaussian (BMI, μ=25, σ²=9)
 ///
 /// Couplings:
-/// - 0 ↔ 1: BP influences hypertension (2×1 matrix)
-/// - 1 ↔ 2: Hypertension linked to BMI (1×2 matrix)
+/// - BP ↔ Hypertension: BP influences hypertension (2×1 matrix)
+/// - Hypertension ↔ BMI: Hypertension linked to BMI (1×2 matrix)
 ///
 /// Observations:
-/// - Node 0: BP measured at 145 (noise σ²=25)
-/// - Node 2: BMI measured at 30 (noise σ²=4)
+/// - BP: measured at 145 (noise σ²=25)
+/// - BMI: measured at 30 (noise σ²=4)
 #[test]
 fn three_node_mixed_graph() {
-    // Node 0: Gaussian BP, μ=120, σ²=100
+    // Node "BP": Gaussian BP, μ=120, σ²=100
     let bp_params = NaturalParams::Gaussian {
         eta1: 120.0 / 100.0, // μ/σ² = 1.2
         eta2: -1.0 / 200.0,  // -1/(2σ²) = -0.005
     };
-    // Node 1: Bernoulli hypertension, p=0.3 → η = logit(0.3) = ln(3/7)
+    // Node "Hypertension": Bernoulli, p=0.3 → η = logit(0.3) = ln(3/7)
     let hyp_params = NaturalParams::Bernoulli {
         eta1: (0.3_f64 / 0.7).ln(),
     };
-    // Node 2: Gaussian BMI, μ=25, σ²=9
+    // Node "BMI": Gaussian BMI, μ=25, σ²=9
     let bmi_params = NaturalParams::Gaussian {
         eta1: 25.0 / 9.0,
         eta2: -1.0 / 18.0,
     };
 
     let nodes = vec![
-        make_node(0, "BP", bp_params, 24.0),
-        make_node(1, "Hypertension", hyp_params, 48.0),
-        make_node(2, "BMI", bmi_params, 24.0),
+        make_node("BP", bp_params, 24.0),
+        make_node("Hypertension", hyp_params, 48.0),
+        make_node("BMI", bmi_params, 24.0),
     ];
 
     // BP → Hypertension coupling: 2×1 matrix (suff stats of Gaussian are 2D, Bernoulli is 1D)
@@ -69,13 +68,13 @@ fn three_node_mixed_graph() {
 
     let edges = vec![
         Edge {
-            i: 0,
-            j: 1,
+            i: "BP".to_owned(),
+            j: "Hypertension".to_owned(),
             coupling: bp_hyp,
         },
         Edge {
-            i: 1,
-            j: 2,
+            i: "Hypertension".to_owned(),
+            j: "BMI".to_owned(),
             coupling: hyp_bmi,
         },
     ];
@@ -84,14 +83,14 @@ fn three_node_mixed_graph() {
 
     // Add observations
     graph.add_observation(
-        0,
+        "BP".to_owned(),
         Observation::GaussianNoise {
             value: 145.0,
             noise_var: 25.0,
         },
     );
     graph.add_observation(
-        2,
+        "BMI".to_owned(),
         Observation::GaussianNoise {
             value: 30.0,
             noise_var: 4.0,
@@ -168,12 +167,12 @@ fn multiple_observations() {
         eta1: 0.0,
         eta2: -0.5,
     };
-    let mut graph = Graph::new(vec![make_node(0, "X", params, 1.0)], vec![]);
+    let mut graph = Graph::new(vec![make_node("X", params, 1.0)], vec![]);
 
     // 5 observations at x=2, each with noise σ²=1
     for _ in 0..5 {
         graph.add_observation(
-            0,
+            "X".to_owned(),
             Observation::GaussianNoise {
                 value: 2.0,
                 noise_var: 1.0,
@@ -201,10 +200,13 @@ fn categorical_observation() {
     let params = NaturalParams::Categorical {
         eta: vec![0.0, 0.0],
     };
-    let mut graph = Graph::new(vec![make_node(0, "Diagnosis", params, 1.0)], vec![]);
+    let mut graph = Graph::new(vec![make_node("Diagnosis", params, 1.0)], vec![]);
 
     // Observe class 0
-    graph.add_observation(0, Observation::CategoricalExact { category: 0 });
+    graph.add_observation(
+        "Diagnosis".to_owned(),
+        Observation::CategoricalExact { category: 0 },
+    );
 
     let result = coordinate_ascent(&mut graph, 100, 1e-10);
     assert!(result.converged);
@@ -231,28 +233,26 @@ fn categorical_observation() {
 fn yaml_pipeline_roundtrip() {
     let input_yaml = r#"
 nodes:
-  - id: 0
-    name: "blood_pressure"
+  - name: "blood_pressure"
     family:
       type: gaussian
       mu: 120.0
       sigma2: 225.0
     tau: 30.0
-  - id: 1
-    name: "hypertension"
+  - name: "hypertension"
     family:
       type: bernoulli
       p: 0.3
     tau: 365.0
 edges:
-  - from: 0
-    to: 1
+  - from: blood_pressure
+    to: hypertension
     coupling:
       - [0.01]
       - [0.005]
 observations:
   - type: gaussian_noise
-    node: 0
+    node: blood_pressure
     value: 145.0
     noise_var: 25.0
 inference:
@@ -293,11 +293,11 @@ fn temporal_advance_then_reinfer() {
         eta1: 0.0,
         eta2: -0.5,
     };
-    let mut graph = Graph::new(vec![make_node(0, "X", params, 1.0)], vec![]);
+    let mut graph = Graph::new(vec![make_node("X", params, 1.0)], vec![]);
 
     // First inference: observe x=5
     graph.add_observation(
-        0,
+        "X".to_owned(),
         Observation::GaussianNoise {
             value: 5.0,
             noise_var: 1.0,
@@ -349,9 +349,9 @@ fn output_yaml_structure() {
         eta1: 0.0,
         eta2: -0.5,
     };
-    let mut graph = Graph::new(vec![make_node(0, "test_node", params, 1.0)], vec![]);
+    let mut graph = Graph::new(vec![make_node("test_node", params, 1.0)], vec![]);
     graph.add_observation(
-        0,
+        "test_node".to_owned(),
         Observation::GaussianNoise {
             value: 1.0,
             noise_var: 1.0,

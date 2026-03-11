@@ -23,7 +23,7 @@ pub(super) fn validate_observation(
         } => {
             if *noise_var <= 0.0 {
                 (
-                    *node,
+                    node.clone(),
                     Err(vec![SchemaError {
                         path: format!("{path}.noise_var"),
                         message: format!("noise_var must be > 0, got {noise_var}"),
@@ -31,7 +31,7 @@ pub(super) fn validate_observation(
                 )
             } else {
                 (
-                    *node,
+                    node.clone(),
                     Ok(Observation::GaussianNoise {
                         value: *value,
                         noise_var: *noise_var,
@@ -40,17 +40,19 @@ pub(super) fn validate_observation(
             }
         }
         ObservationDef::CategoricalExact { node, category } => (
-            *node,
+            node.clone(),
             Ok(Observation::CategoricalExact {
                 category: *category,
             }),
         ),
-        ObservationDef::PoissonCount { node, count } => {
-            (*node, Ok(Observation::PoissonCount { count: *count }))
-        }
-        ObservationDef::BernoulliExact { node, value } => {
-            (*node, Ok(Observation::BernoulliExact { value: *value }))
-        }
+        ObservationDef::PoissonCount { node, count } => (
+            node.clone(),
+            Ok(Observation::PoissonCount { count: *count }),
+        ),
+        ObservationDef::BernoulliExact { node, value } => (
+            node.clone(),
+            Ok(Observation::BernoulliExact { value: *value }),
+        ),
         ObservationDef::BetaProportion {
             node,
             value,
@@ -71,14 +73,14 @@ pub(super) fn validate_observation(
             }
             if errors.is_empty() {
                 (
-                    *node,
+                    node.clone(),
                     Ok(Observation::BetaProportion {
                         value: *value,
                         concentration: *concentration,
                     }),
                 )
             } else {
-                (*node, Err(errors))
+                (node.clone(), Err(errors))
             }
         }
         ObservationDef::GammaRate { node, value, shape } => {
@@ -97,14 +99,14 @@ pub(super) fn validate_observation(
             }
             if errors.is_empty() {
                 (
-                    *node,
+                    node.clone(),
                     Ok(Observation::GammaRate {
                         value: *value,
                         shape: *shape,
                     }),
                 )
             } else {
-                (*node, Err(errors))
+                (node.clone(), Err(errors))
             }
         }
     }

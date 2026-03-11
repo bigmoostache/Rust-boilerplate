@@ -7,8 +7,7 @@ mod tests {
 
     const MINIMAL_YAML: &str = r#"
 nodes:
-  - id: 0
-    name: "blood_pressure"
+  - name: "blood_pressure"
     family:
       type: gaussian
       mu: 120.0
@@ -35,43 +34,40 @@ inference:
     fn full_three_node_graph() {
         let yaml = r#"
 nodes:
-  - id: 0
-    name: "blood_pressure"
+  - name: "blood_pressure"
     family:
       type: gaussian
       mu: 120.0
       sigma2: 225.0
     tau: 30.0
-  - id: 1
-    name: "hypertension"
+  - name: "hypertension"
     family:
       type: bernoulli
       p: 0.3
     tau: 365.0
-  - id: 2
-    name: "bmi"
+  - name: "bmi"
     family:
       type: gaussian
       mu: 25.0
       sigma2: 16.0
     tau: 90.0
 edges:
-  - from: 0
-    to: 1
+  - from: blood_pressure
+    to: hypertension
     coupling:
       - [0.01]
       - [0.005]
-  - from: 1
-    to: 2
+  - from: hypertension
+    to: bmi
     coupling:
       - [0.1, 0.0]
 observations:
   - type: gaussian_noise
-    node: 0
+    node: blood_pressure
     value: 145.0
     noise_var: 25.0
   - type: gaussian_noise
-    node: 2
+    node: bmi
     value: 30.0
     noise_var: 4.0
 inference:
@@ -82,20 +78,18 @@ inference:
         let config = parse_yaml(yaml).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(config.graph.num_nodes(), 3);
         assert_eq!(config.graph.num_edges(), 2);
-        assert_eq!(config.graph.observations_for(0).len(), 1);
-        assert_eq!(config.graph.observations_for(2).len(), 1);
+        assert_eq!(config.graph.observations_for("blood_pressure").len(), 1);
+        assert_eq!(config.graph.observations_for("bmi").len(), 1);
     }
 
     #[test]
-    fn duplicate_node_id() {
+    fn duplicate_node_name() {
         let yaml = r#"
 nodes:
-  - id: 0
-    name: "A"
+  - name: "A"
     family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
     tau: 1.0
-  - id: 0
-    name: "B"
+  - name: "A"
     family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
     tau: 1.0
 edges: []
@@ -110,8 +104,7 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
     fn invalid_sigma2() {
         let yaml = r#"
 nodes:
-  - id: 0
-    name: "A"
+  - name: "A"
     family: { type: gaussian, mu: 0.0, sigma2: -1.0 }
     tau: 1.0
 edges: []
@@ -130,8 +123,7 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
     fn invalid_tau() {
         let yaml = r#"
 nodes:
-  - id: 0
-    name: "A"
+  - name: "A"
     family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
     tau: -5.0
 edges: []
@@ -150,13 +142,12 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
     fn unknown_node_in_edge() {
         let yaml = r#"
 nodes:
-  - id: 0
-    name: "A"
+  - name: "A"
     family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
     tau: 1.0
 edges:
-  - from: 0
-    to: 99
+  - from: A
+    to: nonexistent
     coupling:
       - [1.0, 0.0]
       - [0.0, 1.0]
@@ -167,7 +158,7 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
         assert!(
             err.errors
                 .iter()
-                .any(|e| e.message.contains("unknown node ID 99"))
+                .any(|e| e.message.contains("unknown node"))
         );
     }
 
@@ -175,17 +166,15 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
     fn coupling_dimension_mismatch() {
         let yaml = r#"
 nodes:
-  - id: 0
-    name: "A"
+  - name: "A"
     family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
     tau: 1.0
-  - id: 1
-    name: "B"
+  - name: "B"
     family: { type: bernoulli, p: 0.5 }
     tau: 1.0
 edges:
-  - from: 0
-    to: 1
+  - from: A
+    to: B
     coupling:
       - [1.0, 0.0]
       - [0.0, 1.0]
@@ -204,14 +193,13 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
     fn incompatible_observation() {
         let yaml = r#"
 nodes:
-  - id: 0
-    name: "A"
+  - name: "A"
     family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
     tau: 1.0
 edges: []
 observations:
   - type: bernoulli_exact
-    node: 0
+    node: A
     value: true
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
@@ -227,8 +215,7 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
     fn categorical_probs_not_sum_one() {
         let yaml = r#"
 nodes:
-  - id: 0
-    name: "A"
+  - name: "A"
     family: { type: categorical, probs: [0.3, 0.3, 0.3] }
     tau: 1.0
 edges: []
@@ -243,8 +230,7 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
     fn unknown_field_rejected() {
         let yaml = r#"
 nodes:
-  - id: 0
-    name: "A"
+  - name: "A"
     family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
     tau: 1.0
     bogus_field: 42
@@ -265,8 +251,7 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
         // Gaussian: mu=3, sigma2=4 → eta1=0.75, eta2=-0.125
         let yaml = r#"
 nodes:
-  - id: 0
-    name: "A"
+  - name: "A"
     family: { type: gaussian, mu: 3.0, sigma2: 4.0 }
     tau: 1.0
 edges: []
@@ -274,7 +259,10 @@ observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
         let config = parse_yaml(yaml).unwrap_or_else(|e| panic!("{e}"));
-        let node = config.graph.node(0).unwrap_or_else(|| panic!("no node 0"));
+        let node = config
+            .graph
+            .node("A")
+            .unwrap_or_else(|| panic!("no node A"));
         let NaturalParams::Gaussian { eta1, eta2 } = node.epidemio else {
             panic!("expected Gaussian");
         };
@@ -286,32 +274,25 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
     fn all_families_parse() {
         let yaml = r#"
 nodes:
-  - id: 0
-    name: "gauss"
+  - name: "gauss"
     family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
     tau: 1.0
-  - id: 1
-    name: "gam"
+  - name: "gam"
     family: { type: gamma, alpha: 3.0, beta: 2.0 }
     tau: 1.0
-  - id: 2
-    name: "bet"
+  - name: "bet"
     family: { type: beta, alpha: 2.0, beta: 5.0 }
     tau: 1.0
-  - id: 3
-    name: "pois"
+  - name: "pois"
     family: { type: poisson, lambda: 5.0 }
     tau: 1.0
-  - id: 4
-    name: "bern"
+  - name: "bern"
     family: { type: bernoulli, p: 0.7 }
     tau: 1.0
-  - id: 5
-    name: "cat"
+  - name: "cat"
     family: { type: categorical, probs: [0.2, 0.3, 0.5] }
     tau: 1.0
-  - id: 6
-    name: "dir"
+  - name: "dir"
     family: { type: dirichlet, alpha: [2.0, 3.0, 5.0] }
     tau: 1.0
 edges: []
@@ -326,12 +307,10 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
     fn multiple_errors_collected() {
         let yaml = r#"
 nodes:
-  - id: 0
-    name: "A"
+  - name: "A"
     family: { type: gaussian, mu: 0.0, sigma2: -1.0 }
     tau: -5.0
-  - id: 0
-    name: "B"
+  - name: "A"
     family: { type: bernoulli, p: 2.0 }
     tau: 0.0
 edges: []
@@ -339,11 +318,101 @@ observations: []
 inference: { max_iter: 10, tolerance: -1.0, delta_t: -1.0 }
 "#;
         let err = parse_yaml(yaml).unwrap_err();
-        // Should have: sigma2, tau, duplicate id, p, tau, tolerance, delta_t
+        // Should have: sigma2, tau, duplicate name, p, tau, tolerance, delta_t
         assert!(
             err.errors.len() >= 5,
             "expected at least 5 errors, got {}",
             err.errors.len()
         );
+    }
+
+    #[test]
+    fn inline_edges_to() {
+        let yaml = r#"
+nodes:
+  - name: "A"
+    family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
+    tau: 1.0
+    edges_to:
+      - node: B
+        coupling:
+          - [0.1]
+          - [0.0]
+  - name: "B"
+    family: { type: bernoulli, p: 0.5 }
+    tau: 1.0
+edges: []
+observations: []
+inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
+"#;
+        let config = parse_yaml(yaml).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(config.graph.num_edges(), 1);
+        // Edge should be A → B
+        assert_eq!(config.graph.neighbors("A").len(), 1);
+        assert_eq!(config.graph.neighbors("B").len(), 1);
+    }
+
+    #[test]
+    fn inline_edges_from() {
+        let yaml = r#"
+nodes:
+  - name: "A"
+    family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
+    tau: 1.0
+  - name: "B"
+    family: { type: bernoulli, p: 0.5 }
+    tau: 1.0
+    edges_from:
+      - node: A
+        coupling:
+          - [0.1]
+          - [0.0]
+edges: []
+observations: []
+inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
+"#;
+        let config = parse_yaml(yaml).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(config.graph.num_edges(), 1);
+        // Edge should be A → B (from declares: A → this_node=B)
+        assert_eq!(config.graph.neighbors("A").len(), 1);
+        assert_eq!(config.graph.neighbors("B").len(), 1);
+    }
+
+    #[test]
+    fn inline_edges_mixed_with_toplevel() {
+        let yaml = r#"
+nodes:
+  - name: "flu"
+    family: { type: bernoulli, p: 0.25 }
+    tau: 14.0
+    edges_to:
+      - node: headache
+        coupling: [[1.5]]
+      - node: body_aches
+        coupling: [[2.0]]
+  - name: "headache"
+    family: { type: bernoulli, p: 0.1 }
+    tau: 3.0
+  - name: "body_aches"
+    family: { type: bernoulli, p: 0.05 }
+    tau: 3.0
+  - name: "sore_throat"
+    family: { type: bernoulli, p: 0.05 }
+    tau: 5.0
+  - name: "tonsillitis"
+    family: { type: bernoulli, p: 0.25 }
+    tau: 10.0
+edges:
+  - from: tonsillitis
+    to: sore_throat
+    coupling: [[2.5]]
+observations: []
+inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
+"#;
+        let config = parse_yaml(yaml).unwrap_or_else(|e| panic!("{e}"));
+        // 2 inline (flu→headache, flu→body_aches) + 1 top-level (tonsillitis→sore_throat)
+        assert_eq!(config.graph.num_edges(), 3);
+        assert_eq!(config.graph.neighbors("flu").len(), 2);
+        assert_eq!(config.graph.neighbors("tonsillitis").len(), 1);
     }
 }

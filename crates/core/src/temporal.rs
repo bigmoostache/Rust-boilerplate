@@ -71,12 +71,11 @@ mod tests {
     use super::*;
     use crate::distributions::NaturalParams;
 
-    fn gaussian_node(id: u32, name: &str, mu: f64, sigma2: f64, tau: f64) -> Node {
+    fn gaussian_node(name: &str, mu: f64, sigma2: f64, tau: f64) -> Node {
         let eta1 = mu / sigma2;
         let eta2 = -1.0 / (2.0 * sigma2);
         let epidemio = NaturalParams::Gaussian { eta1, eta2 };
         Node {
-            id,
             name: name.to_owned(),
             epidemio: epidemio.clone(),
             prev: epidemio.clone(),
@@ -88,7 +87,7 @@ mod tests {
 
     #[test]
     fn zero_delta_t_keeps_prev() {
-        let mut node = gaussian_node(0, "A", 5.0, 2.0, 10.0);
+        let mut node = gaussian_node("A", 5.0, 2.0, 10.0);
         // Set prev to something different from epidemio.
         node.prev = NaturalParams::Gaussian {
             eta1: 1.0,
@@ -105,7 +104,7 @@ mod tests {
 
     #[test]
     fn large_delta_t_reverts_to_epidemio() {
-        let mut node = gaussian_node(0, "A", 5.0, 2.0, 1.0);
+        let mut node = gaussian_node("A", 5.0, 2.0, 1.0);
         // Set prev far from epidemio.
         node.prev = NaturalParams::Gaussian {
             eta1: 100.0,
@@ -129,7 +128,7 @@ mod tests {
 
     #[test]
     fn intermediate_decay() {
-        let mut node = gaussian_node(0, "A", 0.0, 1.0, 1.0);
+        let mut node = gaussian_node("A", 0.0, 1.0, 1.0);
         // epidemio: μ=0, σ²=1 → η₁=0, η₂=−0.5
         // Set prev: μ=4, σ²=1 → η₁=4, η₂=−0.5
         node.prev = NaturalParams::Gaussian {
@@ -150,7 +149,7 @@ mod tests {
 
     #[test]
     fn zero_tau_reverts_to_epidemio() {
-        let mut node = gaussian_node(0, "A", 5.0, 2.0, 0.0); // τ = 0
+        let mut node = gaussian_node("A", 5.0, 2.0, 0.0); // τ = 0
         node.prev = NaturalParams::Gaussian {
             eta1: 100.0,
             eta2: -50.0,
@@ -174,8 +173,8 @@ mod tests {
     #[test]
     fn relax_graph_updates_all_nodes() {
         let nodes = vec![
-            gaussian_node(0, "A", 0.0, 1.0, 1.0),
-            gaussian_node(1, "B", 10.0, 1.0, 2.0),
+            gaussian_node("A", 0.0, 1.0, 1.0),
+            gaussian_node("B", 10.0, 1.0, 2.0),
         ];
         let mut graph = Graph::new(nodes, vec![]);
         // Set prev differently for each.
@@ -212,7 +211,7 @@ mod tests {
 
     #[test]
     fn advance_copies_post_then_relaxes() {
-        let nodes = vec![gaussian_node(0, "A", 0.0, 1.0, 1.0)];
+        let nodes = vec![gaussian_node("A", 0.0, 1.0, 1.0)];
         let mut graph = Graph::new(nodes, vec![]);
         // Set a distinct posterior.
         if let Some(n) = graph.nodes.get_mut(0) {

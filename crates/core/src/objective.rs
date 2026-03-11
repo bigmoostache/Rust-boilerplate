@@ -57,8 +57,8 @@ fn coupling_term(graph: &Graph) -> f64 {
         .edges
         .iter()
         .filter_map(|edge| {
-            let i_idx = graph.node_index(edge.i)?;
-            let j_idx = graph.node_index(edge.j)?;
+            let i_idx = graph.node_index(&edge.i)?;
+            let j_idx = graph.node_index(&edge.j)?;
             let ti = graph.nodes.get(i_idx)?.post.expected_suff_stats();
             let tj = graph.nodes.get(j_idx)?.post.expected_suff_stats();
             let product = ti.transpose() * &edge.coupling * tj;
@@ -83,7 +83,7 @@ fn observation_term(graph: &Graph) -> f64 {
         .iter()
         .map(|node| {
             graph
-                .observations_for(node.id)
+                .observations_for(&node.name)
                 .iter()
                 .map(|obs| obs.expected_log_likelihood(&node.post))
                 .sum::<f64>()
@@ -106,12 +106,11 @@ mod tests {
 
     use super::Elbo;
 
-    fn make_gaussian_node(id: u32, name: &str, mu: f64, sigma2: f64) -> Node {
+    fn make_gaussian_node(name: &str, mu: f64, sigma2: f64) -> Node {
         let eta1 = mu / sigma2;
         let eta2 = -1.0 / (2.0 * sigma2);
         let params = NaturalParams::Gaussian { eta1, eta2 };
         Node {
-            id,
             name: name.to_owned(),
             epidemio: params.clone(),
             prev: params.clone(),
@@ -124,7 +123,7 @@ mod tests {
     #[test]
     fn elbo_no_edges_no_obs() {
         // Single node, prior == posterior → prior term = −H, so F = 0
-        let graph = Graph::new(vec![make_gaussian_node(0, "A", 0.0, 1.0)], vec![]);
+        let graph = Graph::new(vec![make_gaussian_node("A", 0.0, 1.0)], vec![]);
         let elbo = graph.elbo();
 
         assert!(elbo.coupling.abs() < 1e-12);
@@ -145,12 +144,12 @@ mod tests {
     fn elbo_with_coupling() {
         // Two Gaussian nodes with identity coupling
         let nodes = vec![
-            make_gaussian_node(0, "A", 1.0, 1.0),
-            make_gaussian_node(1, "B", 2.0, 1.0),
+            make_gaussian_node("A", 1.0, 1.0),
+            make_gaussian_node("B", 2.0, 1.0),
         ];
         let edges = vec![Edge {
-            i: 0,
-            j: 1,
+            i: "A".to_owned(),
+            j: "B".to_owned(),
             coupling: DMatrix::identity(2, 2),
         }];
         let graph = Graph::new(nodes, edges);
@@ -168,9 +167,9 @@ mod tests {
 
     #[test]
     fn elbo_with_observation() {
-        let mut graph = Graph::new(vec![make_gaussian_node(0, "A", 0.0, 1.0)], vec![]);
+        let mut graph = Graph::new(vec![make_gaussian_node("A", 0.0, 1.0)], vec![]);
         graph.add_observation(
-            0,
+            "A".to_owned(),
             Observation::GaussianNoise {
                 value: 0.0,
                 noise_var: 1.0,
@@ -192,17 +191,17 @@ mod tests {
     #[test]
     fn elbo_breakdown_total() {
         let nodes = vec![
-            make_gaussian_node(0, "A", 1.0, 1.0),
-            make_gaussian_node(1, "B", 2.0, 1.0),
+            make_gaussian_node("A", 1.0, 1.0),
+            make_gaussian_node("B", 2.0, 1.0),
         ];
         let edges = vec![Edge {
-            i: 0,
-            j: 1,
+            i: "A".to_owned(),
+            j: "B".to_owned(),
             coupling: DMatrix::from_row_slice(2, 2, &[0.1, 0.0, 0.0, 0.1]),
         }];
         let mut graph = Graph::new(nodes, edges);
         graph.add_observation(
-            0,
+            "A".to_owned(),
             Observation::GaussianNoise {
                 value: 0.5,
                 noise_var: 0.5,

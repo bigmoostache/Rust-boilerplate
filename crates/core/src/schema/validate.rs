@@ -13,7 +13,7 @@ use crate::observation::Observation;
 
 use super::diag::{SchemaError, SchemaErrors};
 use super::observation_compat::{check_obs_family_compat, validate_observation};
-use super::raw::{FamilyDef, GraphConfig};
+use super::raw::{EdgeDef, FamilyDef, GraphConfig};
 
 // ---------------------------------------------------------------------------
 // Validated output
@@ -113,15 +113,15 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
     // ── Validate nodes ──────────────────────────────────────────
     let mut seen_ids = HashSet::new();
     let mut nodes: Vec<Node> = Vec::with_capacity(raw.nodes.len());
-    let mut node_families: HashMap<u32, &FamilyDef> = HashMap::new();
+    let mut node_families: HashMap<&str, &FamilyDef> = HashMap::new();
 
     for (idx, raw_node) in raw.nodes.iter().enumerate() {
         let prefix = format!("nodes[{idx}]");
 
-        if !seen_ids.insert(raw_node.id) {
+        if !seen_ids.insert(&raw_node.name) {
             errors.push(SchemaError {
-                path: format!("{prefix}.id"),
-                message: format!("duplicate node ID {}", raw_node.id),
+                path: format!("{prefix}.name"),
+                message: format!("duplicate node name \"{}\"", raw_node.name),
             });
         }
 
@@ -135,7 +135,6 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
         match validate_family(&raw_node.family, &format!("{prefix}.family")) {
             Ok(params) => {
                 let node = Node {
-                    id: raw_node.id,
                     name: raw_node.name.clone(),
                     epidemio: params.clone(),
                     prev: params.clone(),
@@ -144,21 +143,50 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
                     tau: raw_node.tau,
                 };
                 nodes.push(node);
-                let _prev = node_families.insert(raw_node.id, &raw_node.family);
+                let _prev = node_families.insert(&raw_node.name, &raw_node.family);
             }
             Err(mut errs) => errors.append(&mut errs),
         }
     }
 
-    let node_dim: HashMap<u32, usize> = nodes
+    let node_dim: HashMap<&str, usize> = nodes
         .iter()
-        .map(|n| (n.id, n.epidemio.suff_stat_dim()))
+        .map(|n| (n.name.as_str(), n.epidemio.suff_stat_dim()))
         .collect();
 
-    // ── Validate edges ──────────────────────────────────────────
-    let mut edges: Vec<Edge> = Vec::with_capacity(raw.edges.len());
+    // ── Collect inline edges from nodes ────────────────────────
+    let mut all_edges: Vec<EdgeDef> = Vec::new();
 
-    for (idx, raw_edge) in raw.edges.iter().enumerate() {
+    for raw_node in &raw.nodes {
+        for inline in &raw_node.edges_to {
+            all_edges.push(EdgeDef {
+                from: raw_node.name.clone(),
+                to: inline.node.clone(),
+                coupling: inline.coupling.clone(),
+            });
+        }
+        for inline in &raw_node.edges_from {
+            all_edges.push(EdgeDef {
+                from: inline.node.clone(),
+                to: raw_node.name.clone(),
+                coupling: inline.coupling.clone(),
+            });
+        }
+    }
+
+    // Append top-level edges after inline edges.
+    for raw_edge in &raw.edges {
+        all_edges.push(EdgeDef {
+            from: raw_edge.from.clone(),
+            to: raw_edge.to.clone(),
+            coupling: raw_edge.coupling.clone(),
+        });
+    }
+
+    // ── Validate edges ──────────────────────────────────────────
+    let mut edges: Vec<Edge> = Vec::with_capacity(all_edges.len());
+
+    for (idx, raw_edge) in all_edges.iter().enumerate() {
         let prefix = format!("edges[{idx}]");
 
         let from_exists = seen_ids.contains(&raw_edge.from);
@@ -167,13 +195,13 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
         if !from_exists {
             errors.push(SchemaError {
                 path: format!("{prefix}.from"),
-                message: format!("unknown node ID {}", raw_edge.from),
+                message: format!("unknown node \"{}\"", raw_edge.from),
             });
         }
         if !to_exists {
             errors.push(SchemaError {
                 path: format!("{prefix}.to"),
-                message: format!("unknown node ID {}", raw_edge.to),
+                message: format!("unknown node \"{}\"", raw_edge.to),
             });
         }
 
@@ -181,8 +209,10 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
             Ok(coupling) => {
                 if from_exists
                     && to_exists
-                    && let (Some(&di), Some(&dj)) =
-                        (node_dim.get(&raw_edge.from), node_dim.get(&raw_edge.to))
+                    && let (Some(&di), Some(&dj)) = (
+                        node_dim.get(raw_edge.from.as_str()),
+                        node_dim.get(raw_edge.to.as_str()),
+                    )
                     && (coupling.nrows() != di || coupling.ncols() != dj)
                 {
                     errors.push(SchemaError {
@@ -195,8 +225,8 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
                     });
                 }
                 edges.push(Edge {
-                    i: raw_edge.from,
-                    j: raw_edge.to,
+                    i: raw_edge.from.clone(),
+                    j: raw_edge.to.clone(),
                     coupling,
                 });
             }
@@ -214,13 +244,13 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
         if !seen_ids.contains(&node_id) {
             errors.push(SchemaError {
                 path: format!("{prefix}.node"),
-                message: format!("unknown node ID {node_id}"),
+                message: format!("unknown node \"{node_id}\""),
             });
         }
 
         match obs_result {
             Ok(obs) => {
-                if let Some(family) = node_families.get(&node_id)
+                if let Some(family) = node_families.get(node_id.as_str())
                     && let Some(err) = check_obs_family_compat(&obs, family, &prefix)
                 {
                     errors.push(err);

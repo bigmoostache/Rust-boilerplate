@@ -11,8 +11,8 @@ use nalgebra::DMatrix;
 use crate::distributions::NaturalParams;
 use crate::observation::Observation;
 
-/// Unique identifier for a graph node.
-pub type NodeId = u32;
+/// Unique identifier for a graph node — the node's name.
+pub type NodeId = String;
 
 /// A node in the patient graph.
 ///
@@ -21,9 +21,7 @@ pub type NodeId = u32;
 /// relaxed prior, and current posterior.
 #[derive(Debug, Clone)]
 pub struct Node {
-    /// Unique identifier.
-    pub id: NodeId,
-    /// Human-readable name (e.g., "glycemia", "CRP", "compliance").
+    /// Unique name (e.g., "glycemia", "CRP", "compliance").
     pub name: String,
     /// Fixed population prior — epidemiological reference.
     pub epidemio: NaturalParams,
@@ -77,8 +75,11 @@ impl Graph {
     /// matrix dimensions don't match sufficient-statistic dimensions.
     #[must_use]
     pub fn new(nodes: Vec<Node>, edges: Vec<Edge>) -> Self {
-        let id_to_index: HashMap<NodeId, usize> =
-            nodes.iter().enumerate().map(|(i, n)| (n.id, i)).collect();
+        let id_to_index: HashMap<NodeId, usize> = nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.name.clone(), i))
+            .collect();
 
         // Validate edges
         for edge in &edges {
@@ -112,21 +113,21 @@ impl Graph {
 
     /// Get a node by its ID, or `None` if not found.
     #[must_use]
-    pub fn node(&self, id: NodeId) -> Option<&Node> {
-        let &idx = self.id_to_index.get(&id)?;
+    pub fn node(&self, id: &str) -> Option<&Node> {
+        let &idx = self.id_to_index.get(id)?;
         self.nodes.get(idx)
     }
 
     /// Get a mutable reference to a node by its ID, or `None` if not found.
-    pub fn node_mut(&mut self, id: NodeId) -> Option<&mut Node> {
-        let idx = *self.id_to_index.get(&id)?;
+    pub fn node_mut(&mut self, id: &str) -> Option<&mut Node> {
+        let idx = *self.id_to_index.get(id)?;
         self.nodes.get_mut(idx)
     }
 
     /// Index of a node in the `nodes` vector, or `None` if not found.
     #[must_use]
-    pub fn node_index(&self, id: NodeId) -> Option<usize> {
-        self.id_to_index.get(&id).copied()
+    pub fn node_index(&self, id: &str) -> Option<usize> {
+        self.id_to_index.get(id).copied()
     }
 
     /// Number of nodes.
@@ -156,8 +157,8 @@ impl Graph {
 
     /// Get observations for a node (empty slice if none).
     #[must_use]
-    pub fn observations_for(&self, node_id: NodeId) -> &[Observation] {
-        self.observations.get(&node_id).map_or(&[], Vec::as_slice)
+    pub fn observations_for(&self, node_id: &str) -> &[Observation] {
+        self.observations.get(node_id).map_or(&[], Vec::as_slice)
     }
 
     /// Get the list of neighbor indices and coupling matrices for a node.
@@ -167,7 +168,7 @@ impl Graph {
     /// `(j_idx, B_ij, false)`. If asking about `j`, returns
     /// `(i_idx, B_ij, true)` — meaning the coupling should be transposed.
     #[must_use]
-    pub fn neighbors(&self, node_id: NodeId) -> Vec<(usize, &DMatrix<f64>, bool)> {
+    pub fn neighbors(&self, node_id: &str) -> Vec<(usize, &DMatrix<f64>, bool)> {
         let mut result = Vec::new();
         for edge in &self.edges {
             if edge.i == node_id {
@@ -188,12 +189,11 @@ impl Graph {
 mod tests {
     use super::*;
 
-    fn make_gaussian_node(id: NodeId, name: &str, mu: f64, sigma2: f64) -> Node {
+    fn make_gaussian_node(name: &str, mu: f64, sigma2: f64) -> Node {
         let eta1 = mu / sigma2;
         let eta2 = -1.0 / (2.0 * sigma2);
         let params = NaturalParams::Gaussian { eta1, eta2 };
         Node {
-            id,
             name: name.to_owned(),
             epidemio: params.clone(),
             prev: params.clone(),
@@ -206,12 +206,12 @@ mod tests {
     #[test]
     fn graph_creation() {
         let nodes = vec![
-            make_gaussian_node(0, "A", 0.0, 1.0),
-            make_gaussian_node(1, "B", 0.0, 1.0),
+            make_gaussian_node("A", 0.0, 1.0),
+            make_gaussian_node("B", 0.0, 1.0),
         ];
         let edges = vec![Edge {
-            i: 0,
-            j: 1,
+            i: "A".to_owned(),
+            j: "B".to_owned(),
             coupling: DMatrix::identity(2, 2),
         }];
         let graph = Graph::new(nodes, edges);
@@ -222,46 +222,46 @@ mod tests {
     #[test]
     fn neighbors() {
         let nodes = vec![
-            make_gaussian_node(0, "A", 0.0, 1.0),
-            make_gaussian_node(1, "B", 0.0, 1.0),
-            make_gaussian_node(2, "C", 0.0, 1.0),
+            make_gaussian_node("A", 0.0, 1.0),
+            make_gaussian_node("B", 0.0, 1.0),
+            make_gaussian_node("C", 0.0, 1.0),
         ];
         let edges = vec![
             Edge {
-                i: 0,
-                j: 1,
+                i: "A".to_owned(),
+                j: "B".to_owned(),
                 coupling: DMatrix::identity(2, 2),
             },
             Edge {
-                i: 1,
-                j: 2,
+                i: "B".to_owned(),
+                j: "C".to_owned(),
                 coupling: DMatrix::identity(2, 2),
             },
         ];
         let graph = Graph::new(nodes, edges);
 
-        // Node 0 has 1 neighbor (node 1)
-        assert_eq!(graph.neighbors(0).len(), 1);
-        // Node 1 has 2 neighbors (nodes 0 and 2)
-        assert_eq!(graph.neighbors(1).len(), 2);
-        // Node 2 has 1 neighbor (node 1)
-        assert_eq!(graph.neighbors(2).len(), 1);
+        // Node A has 1 neighbor (node B)
+        assert_eq!(graph.neighbors("A").len(), 1);
+        // Node B has 2 neighbors (nodes A and C)
+        assert_eq!(graph.neighbors("B").len(), 2);
+        // Node C has 1 neighbor (node B)
+        assert_eq!(graph.neighbors("C").len(), 1);
     }
 
     #[test]
     fn observations() {
-        let nodes = vec![make_gaussian_node(0, "A", 0.0, 1.0)];
+        let nodes = vec![make_gaussian_node("A", 0.0, 1.0)];
         let mut graph = Graph::new(nodes, vec![]);
-        assert!(graph.observations_for(0).is_empty());
+        assert!(graph.observations_for("A").is_empty());
 
         graph.add_observation(
-            0,
+            "A".to_owned(),
             Observation::GaussianNoise {
                 value: 1.5,
                 noise_var: 0.1,
             },
         );
-        assert_eq!(graph.observations_for(0).len(), 1);
+        assert_eq!(graph.observations_for("A").len(), 1);
     }
 
     #[test]
@@ -269,12 +269,12 @@ mod tests {
     #[should_panic(expected = "coupling matrix")]
     fn invalid_coupling_dims() {
         let nodes = vec![
-            make_gaussian_node(0, "A", 0.0, 1.0),
-            make_gaussian_node(1, "B", 0.0, 1.0),
+            make_gaussian_node("A", 0.0, 1.0),
+            make_gaussian_node("B", 0.0, 1.0),
         ];
         let edges = vec![Edge {
-            i: 0,
-            j: 1,
+            i: "A".to_owned(),
+            j: "B".to_owned(),
             coupling: DMatrix::identity(3, 3), // Wrong: should be 2×2
         }];
         let _graph = Graph::new(nodes, edges);

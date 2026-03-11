@@ -50,8 +50,6 @@ pub struct ElboBreakdownYaml {
 /// Posterior state of a single node.
 #[derive(Debug, Serialize)]
 pub struct NodePosterior {
-    /// Node identifier.
-    pub id: u32,
     /// Human-readable node name.
     pub name: String,
     /// Posterior in canonical (human-readable) parameters.
@@ -71,7 +69,6 @@ pub fn build_result(graph: &Graph, result: &ConvergenceResult) -> InferenceResul
         .nodes
         .iter()
         .map(|node| NodePosterior {
-            id: node.id,
             name: node.name.clone(),
             family: node.post.to_canonical(),
             natural_params: node.post.eta_vector().as_slice().to_vec(),

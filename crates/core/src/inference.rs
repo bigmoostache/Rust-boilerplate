@@ -105,7 +105,7 @@ fn compute_optimal_eta(graph: &Graph, node_idx: usize) -> DVector<f64> {
     let mut eta = node.relax.eta_vector();
 
     // Add coupling contributions from all neighbors
-    let neighbors = graph.neighbors(node.id);
+    let neighbors = graph.neighbors(&node.name);
     for (j_idx, coupling, transposed) in neighbors {
         if let Some(neighbor) = graph.nodes.get(j_idx) {
             let tj = neighbor.post.expected_suff_stats();
@@ -124,7 +124,7 @@ fn compute_optimal_eta(graph: &Graph, node_idx: usize) -> DVector<f64> {
     }
 
     // Add observation contributions
-    let obs = graph.observations_for(node.id);
+    let obs = graph.observations_for(&node.name);
     if !obs.is_empty() {
         let obs_gradient = observation_gradient(&node.post, obs);
         for i in 0..eta.len().min(obs_gradient.len()) {
@@ -252,12 +252,11 @@ mod tests {
 
     use super::coordinate_ascent;
 
-    fn make_gaussian_node(id: u32, name: &str, mu: f64, sigma2: f64) -> Node {
+    fn make_gaussian_node(name: &str, mu: f64, sigma2: f64) -> Node {
         let eta1 = mu / sigma2;
         let eta2 = -1.0 / (2.0 * sigma2);
         let params = NaturalParams::Gaussian { eta1, eta2 };
         Node {
-            id,
             name: name.to_owned(),
             epidemio: params.clone(),
             prev: params.clone(),
@@ -270,7 +269,7 @@ mod tests {
     #[test]
     fn single_node_no_obs() {
         // With no observations and no couplings, posterior should stay at relax
-        let mut graph = Graph::new(vec![make_gaussian_node(0, "A", 0.0, 1.0)], vec![]);
+        let mut graph = Graph::new(vec![make_gaussian_node("A", 0.0, 1.0)], vec![]);
         let result = coordinate_ascent(&mut graph, 100, 1e-10);
 
         assert!(result.converged);
@@ -289,9 +288,9 @@ mod tests {
         // Bayesian update: posterior = N(1.5, 0.5)
         // η₁_post = 0/1 + 3/1 = 3, η₂_post = −1/2 + (−1/2) = −1
         // → μ = −η₁/(2η₂) = −3/(−2) = 1.5, σ² = −1/(2η₂) = 0.5 ✓
-        let mut graph = Graph::new(vec![make_gaussian_node(0, "A", 0.0, 1.0)], vec![]);
+        let mut graph = Graph::new(vec![make_gaussian_node("A", 0.0, 1.0)], vec![]);
         graph.add_observation(
-            0,
+            "A".to_owned(),
             Observation::GaussianNoise {
                 value: 3.0,
                 noise_var: 1.0,
@@ -313,20 +312,20 @@ mod tests {
     #[test]
     fn two_coupled_gaussians() {
         // Two Gaussian nodes coupled with a small matrix.
-        // Observation on node 0 should propagate to node 1.
+        // Observation on node A should propagate to node B.
         let nodes = vec![
-            make_gaussian_node(0, "A", 0.0, 1.0),
-            make_gaussian_node(1, "B", 0.0, 1.0),
+            make_gaussian_node("A", 0.0, 1.0),
+            make_gaussian_node("B", 0.0, 1.0),
         ];
         // Small coupling so it converges quickly
         let edges = vec![Edge {
-            i: 0,
-            j: 1,
+            i: "A".to_owned(),
+            j: "B".to_owned(),
             coupling: DMatrix::from_row_slice(2, 2, &[0.1, 0.0, 0.0, 0.0]),
         }];
         let mut graph = Graph::new(nodes, edges);
         graph.add_observation(
-            0,
+            "A".to_owned(),
             Observation::GaussianNoise {
                 value: 5.0,
                 noise_var: 1.0,
@@ -336,21 +335,21 @@ mod tests {
         let result = coordinate_ascent(&mut graph, 100, 1e-8);
         assert!(result.converged, "did not converge in 100 iterations");
 
-        // Node 0 should have posterior shifted toward 5.0
+        // Node A should have posterior shifted toward 5.0
         let NaturalParams::Gaussian { eta1: a_eta1, .. } = graph.nodes[0].post else {
             panic!("wrong family");
         };
-        // η₁ of node 0 should be roughly 5 (from obs) + coupling contribution
-        assert!(a_eta1 > 4.0, "node 0 eta1={a_eta1} should be > 4");
+        // η₁ of node A should be roughly 5 (from obs) + coupling contribution
+        assert!(a_eta1 > 4.0, "node A eta1={a_eta1} should be > 4");
 
-        // Node 1 should have been pulled by coupling
+        // Node B should have been pulled by coupling
         let NaturalParams::Gaussian { eta1: b_eta1, .. } = graph.nodes[1].post else {
             panic!("wrong family");
         };
-        // Node 1 has no observation, so it's pulled by coupling with node 0
+        // Node B has no observation, so it's pulled by coupling with node A
         assert!(
             b_eta1.abs() > 0.01,
-            "node 1 should be influenced by coupling, eta1={b_eta1}"
+            "node B should be influenced by coupling, eta1={b_eta1}"
         );
     }
 
@@ -358,24 +357,24 @@ mod tests {
     fn elbo_increases() {
         // ELBO should be non-decreasing across iterations
         let nodes = vec![
-            make_gaussian_node(0, "A", 0.0, 1.0),
-            make_gaussian_node(1, "B", 0.0, 1.0),
+            make_gaussian_node("A", 0.0, 1.0),
+            make_gaussian_node("B", 0.0, 1.0),
         ];
         let edges = vec![Edge {
-            i: 0,
-            j: 1,
+            i: "A".to_owned(),
+            j: "B".to_owned(),
             coupling: DMatrix::from_row_slice(2, 2, &[0.05, 0.0, 0.0, 0.0]),
         }];
         let mut graph = Graph::new(nodes, edges);
         graph.add_observation(
-            0,
+            "A".to_owned(),
             Observation::GaussianNoise {
                 value: 2.0,
                 noise_var: 1.0,
             },
         );
         graph.add_observation(
-            1,
+            "B".to_owned(),
             Observation::GaussianNoise {
                 value: -1.0,
                 noise_var: 2.0,
@@ -400,7 +399,6 @@ mod tests {
         // Bernoulli node with uniform prior (η₁ = 0 → p = 0.5)
         let params = NaturalParams::Bernoulli { eta1: 0.0 };
         let node = Node {
-            id: 0,
             name: "test".to_owned(),
             epidemio: params.clone(),
             prev: params.clone(),
@@ -409,7 +407,10 @@ mod tests {
             tau: 1.0,
         };
         let mut graph = Graph::new(vec![node], vec![]);
-        graph.add_observation(0, Observation::BernoulliExact { value: true });
+        graph.add_observation(
+            "test".to_owned(),
+            Observation::BernoulliExact { value: true },
+        );
 
         let result = coordinate_ascent(&mut graph, 100, 1e-10);
         assert!(result.converged);
