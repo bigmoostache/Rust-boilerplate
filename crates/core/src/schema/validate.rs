@@ -160,17 +160,10 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
     let mut all_edges: Vec<EdgeDef> = Vec::new();
 
     for raw_node in &raw.nodes {
-        for inline in &raw_node.edges_to {
+        for inline in &raw_node.coupled_with {
             all_edges.push(EdgeDef {
-                from: raw_node.name.clone(),
-                to: inline.node.clone(),
-                coupling: inline.coupling.clone(),
-            });
-        }
-        for inline in &raw_node.edges_from {
-            all_edges.push(EdgeDef {
-                from: inline.node.clone(),
-                to: raw_node.name.clone(),
+                node_a: raw_node.name.clone(),
+                node_b: inline.node.clone(),
                 coupling: inline.coupling.clone(),
             });
         }
@@ -179,8 +172,8 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
     // Append top-level edges after inline edges.
     for raw_edge in &raw.edges {
         all_edges.push(EdgeDef {
-            from: raw_edge.from.clone(),
-            to: raw_edge.to.clone(),
+            node_a: raw_edge.node_a.clone(),
+            node_b: raw_edge.node_b.clone(),
             coupling: raw_edge.coupling.clone(),
         });
     }
@@ -191,19 +184,19 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
     for (idx, raw_edge) in all_edges.iter().enumerate() {
         let prefix = format!("edges[{idx}]");
 
-        let from_exists = seen_ids.contains(&raw_edge.from);
-        let to_exists = seen_ids.contains(&raw_edge.to);
+        let from_exists = seen_ids.contains(&raw_edge.node_a);
+        let to_exists = seen_ids.contains(&raw_edge.node_b);
 
         if !from_exists {
             errors.push(SchemaError {
-                path: format!("{prefix}.from"),
-                message: format!("unknown node \"{}\"", raw_edge.from),
+                path: format!("{prefix}.node_a"),
+                message: format!("unknown node \"{}\"", raw_edge.node_a),
             });
         }
         if !to_exists {
             errors.push(SchemaError {
-                path: format!("{prefix}.to"),
-                message: format!("unknown node \"{}\"", raw_edge.to),
+                path: format!("{prefix}.node_b"),
+                message: format!("unknown node \"{}\"", raw_edge.node_b),
             });
         }
 
@@ -212,8 +205,8 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
                 if from_exists
                     && to_exists
                     && let (Some(&di), Some(&dj)) = (
-                        node_dim.get(raw_edge.from.as_str()),
-                        node_dim.get(raw_edge.to.as_str()),
+                        node_dim.get(raw_edge.node_a.as_str()),
+                        node_dim.get(raw_edge.node_b.as_str()),
                     )
                     && (coupling.nrows() != di || coupling.ncols() != dj)
                 {
@@ -227,8 +220,8 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
                     });
                 }
                 edges.push(Edge {
-                    i: raw_edge.from.clone(),
-                    j: raw_edge.to.clone(),
+                    node_a: raw_edge.node_a.clone(),
+                    node_b: raw_edge.node_b.clone(),
                     coupling,
                 });
             }

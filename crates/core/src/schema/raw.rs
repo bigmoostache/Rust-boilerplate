@@ -62,12 +62,9 @@ pub struct NodeDef {
     pub family: FamilyDef,
     /// Relaxation time constant `τ > 0`.
     pub tau: f64,
-    /// Inline outgoing edges: `this_node → target`.
+    /// Inline edges: this node is coupled with the listed nodes.
     #[serde(default)]
-    pub edges_to: Vec<InlineEdge>,
-    /// Inline incoming edges: `source → this_node`.
-    #[serde(default)]
-    pub edges_from: Vec<InlineEdge>,
+    pub coupled_with: Vec<InlineEdge>,
 }
 
 /// An inline edge declared on a node definition.
@@ -214,10 +211,10 @@ pub enum ModelDef {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EdgeDef {
-    /// Source node name.
-    pub from: String,
-    /// Target node name.
-    pub to: String,
+    /// First node name.
+    pub node_a: String,
+    /// Second node name.
+    pub node_b: String,
     /// Coupling matrix as row-major nested vectors.
     pub coupling: Vec<Vec<f64>>,
 }

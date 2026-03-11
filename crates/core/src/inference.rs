@@ -306,8 +306,8 @@ mod tests {
             make_gaussian_node("B", 0.0, 1.0),
         ];
         let edges = vec![Edge {
-            i: "A".to_owned(),
-            j: "B".to_owned(),
+            node_a: "A".to_owned(),
+            node_b: "B".to_owned(),
             coupling: DMatrix::from_row_slice(2, 2, &[0.1, 0.0, 0.0, 0.0]),
         }];
         let mut graph = Graph::new(nodes, edges);
@@ -347,8 +347,8 @@ mod tests {
             make_gaussian_node("B", 0.0, 1.0),
         ];
         let edges = vec![Edge {
-            i: "A".to_owned(),
-            j: "B".to_owned(),
+            node_a: "A".to_owned(),
+            node_b: "B".to_owned(),
             coupling: DMatrix::from_row_slice(2, 2, &[0.05, 0.0, 0.0, 0.0]),
         }];
         let mut graph = Graph::new(nodes, edges);

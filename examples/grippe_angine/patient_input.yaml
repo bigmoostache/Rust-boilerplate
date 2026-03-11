@@ -55,40 +55,40 @@ nodes:
 
 edges:
   # Flu → symptoms
-  - from: flu
-    to: temperature
+  - node_a: flu
+    node_b: temperature
     coupling:
       - [0.01, 0.0]
 
-  - from: flu
-    to: headache
+  - node_a: flu
+    node_b: headache
     coupling:
       - [1.5]
 
-  - from: flu
-    to: body_aches
+  - node_a: flu
+    node_b: body_aches
     coupling:
       - [2.0]
 
   # Tonsillitis → symptoms
-  - from: tonsillitis
-    to: temperature
+  - node_a: tonsillitis
+    node_b: temperature
     coupling:
       - [0.008, 0.0]
 
-  - from: tonsillitis
-    to: sore_throat
+  - node_a: tonsillitis
+    node_b: sore_throat
     coupling:
       - [2.5]
 
-  - from: tonsillitis
-    to: headache
+  - node_a: tonsillitis
+    node_b: headache
     coupling:
       - [0.5]
 
   # Disease competition
-  - from: flu
-    to: tonsillitis
+  - node_a: flu
+    node_b: tonsillitis
     coupling:
       - [-0.3]
 

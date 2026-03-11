@@ -37,16 +37,16 @@ pub struct Node {
 
 /// An edge coupling two nodes.
 ///
-/// The coupling matrix `B_ij ∈ ℝ^{d_i × d_j}` operates in
+/// The coupling matrix `B_ij ∈ ℝ^{d_a × d_b}` operates in
 /// sufficient-statistic space: the coupling energy is
-/// `E[T_i]^T B_ij E[T_j]`.
+/// `E[T_a]^T B_ab E[T_b]`.
 #[derive(Debug, Clone)]
 pub struct Edge {
-    /// Source node.
-    pub i: NodeId,
-    /// Target node.
-    pub j: NodeId,
-    /// Coupling matrix `B_ij ∈ ℝ^{d_i × d_j}`.
+    /// First node.
+    pub node_a: NodeId,
+    /// Second node.
+    pub node_b: NodeId,
+    /// Coupling matrix `B_ab ∈ ℝ^{d_a × d_b}`.
     pub coupling: DMatrix<f64>,
 }
 
@@ -83,17 +83,17 @@ impl Graph {
 
         // Validate edges
         for edge in &edges {
-            if let (Some(&i_idx), Some(&j_idx)) =
-                (id_to_index.get(&edge.i), id_to_index.get(&edge.j))
+            if let (Some(&a_idx), Some(&b_idx)) =
+                (id_to_index.get(&edge.node_a), id_to_index.get(&edge.node_b))
             {
-                if let (Some(ni), Some(nj)) = (nodes.get(i_idx), nodes.get(j_idx)) {
-                    let di = ni.epidemio.suff_stat_dim();
-                    let dj = nj.epidemio.suff_stat_dim();
+                if let (Some(na), Some(nb)) = (nodes.get(a_idx), nodes.get(b_idx)) {
+                    let da = na.epidemio.suff_stat_dim();
+                    let db = nb.epidemio.suff_stat_dim();
                     debug_assert!(
-                        edge.coupling.nrows() == di && edge.coupling.ncols() == dj,
-                        "coupling matrix for edge ({}, {}) has shape {}×{}, expected {di}×{dj}",
-                        edge.i,
-                        edge.j,
+                        edge.coupling.nrows() == da && edge.coupling.ncols() == db,
+                        "coupling matrix for edge ({}, {}) has shape {}×{}, expected {da}×{db}",
+                        edge.node_a,
+                        edge.node_b,
                         edge.coupling.nrows(),
                         edge.coupling.ncols()
                     );
@@ -171,14 +171,14 @@ impl Graph {
     pub fn neighbors(&self, node_id: &str) -> Vec<(usize, &DMatrix<f64>, bool)> {
         let mut result = Vec::new();
         for edge in &self.edges {
-            if edge.i == node_id {
-                if let Some(&j_idx) = self.id_to_index.get(&edge.j) {
-                    result.push((j_idx, &edge.coupling, false));
+            if edge.node_a == node_id {
+                if let Some(&b_idx) = self.id_to_index.get(&edge.node_b) {
+                    result.push((b_idx, &edge.coupling, false));
                 }
-            } else if edge.j == node_id
-                && let Some(&i_idx) = self.id_to_index.get(&edge.i)
+            } else if edge.node_b == node_id
+                && let Some(&a_idx) = self.id_to_index.get(&edge.node_a)
             {
-                result.push((i_idx, &edge.coupling, true));
+                result.push((a_idx, &edge.coupling, true));
             }
         }
         result
@@ -210,8 +210,8 @@ mod tests {
             make_gaussian_node("B", 0.0, 1.0),
         ];
         let edges = vec![Edge {
-            i: "A".to_owned(),
-            j: "B".to_owned(),
+            node_a: "A".to_owned(),
+            node_b: "B".to_owned(),
             coupling: DMatrix::identity(2, 2),
         }];
         let graph = Graph::new(nodes, edges);
@@ -228,13 +228,13 @@ mod tests {
         ];
         let edges = vec![
             Edge {
-                i: "A".to_owned(),
-                j: "B".to_owned(),
+                node_a: "A".to_owned(),
+                node_b: "B".to_owned(),
                 coupling: DMatrix::identity(2, 2),
             },
             Edge {
-                i: "B".to_owned(),
-                j: "C".to_owned(),
+                node_a: "B".to_owned(),
+                node_b: "C".to_owned(),
                 coupling: DMatrix::identity(2, 2),
             },
         ];
@@ -273,8 +273,8 @@ mod tests {
             make_gaussian_node("B", 0.0, 1.0),
         ];
         let edges = vec![Edge {
-            i: "A".to_owned(),
-            j: "B".to_owned(),
+            node_a: "A".to_owned(),
+            node_b: "B".to_owned(),
             coupling: DMatrix::identity(3, 3), // Wrong: should be 2×2
         }];
         let _graph = Graph::new(nodes, edges);

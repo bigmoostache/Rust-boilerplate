@@ -57,11 +57,11 @@ fn coupling_term(graph: &Graph) -> f64 {
         .edges
         .iter()
         .filter_map(|edge| {
-            let i_idx = graph.node_index(&edge.i)?;
-            let j_idx = graph.node_index(&edge.j)?;
-            let ti = graph.nodes.get(i_idx)?.post.expected_suff_stats();
-            let tj = graph.nodes.get(j_idx)?.post.expected_suff_stats();
-            let product = ti.transpose() * &edge.coupling * tj;
+            let a_idx = graph.node_index(&edge.node_a)?;
+            let b_idx = graph.node_index(&edge.node_b)?;
+            let ta = graph.nodes.get(a_idx)?.post.expected_suff_stats();
+            let tb = graph.nodes.get(b_idx)?.post.expected_suff_stats();
+            let product = ta.transpose() * &edge.coupling * tb;
             product.get((0, 0)).copied()
         })
         .sum()
@@ -148,8 +148,8 @@ mod tests {
             make_gaussian_node("B", 2.0, 1.0),
         ];
         let edges = vec![Edge {
-            i: "A".to_owned(),
-            j: "B".to_owned(),
+            node_a: "A".to_owned(),
+            node_b: "B".to_owned(),
             coupling: DMatrix::identity(2, 2),
         }];
         let graph = Graph::new(nodes, edges);
@@ -195,8 +195,8 @@ mod tests {
             make_gaussian_node("B", 2.0, 1.0),
         ];
         let edges = vec![Edge {
-            i: "A".to_owned(),
-            j: "B".to_owned(),
+            node_a: "A".to_owned(),
+            node_b: "B".to_owned(),
             coupling: DMatrix::from_row_slice(2, 2, &[0.1, 0.0, 0.0, 0.1]),
         }];
         let mut graph = Graph::new(nodes, edges);

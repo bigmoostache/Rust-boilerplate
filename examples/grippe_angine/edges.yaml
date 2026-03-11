@@ -8,8 +8,8 @@ edges:
   # temperature (d=2) ↔ headache (d=1): 2×1 coupling
   # Fever and headache are correlated regardless of cause.
   # Small coupling since E[T_gauss] values are large.
-  - from: temperature
-    to: headache
+  - node_a: temperature
+    node_b: headache
     coupling:
       - [0.005]
       - [0.0]

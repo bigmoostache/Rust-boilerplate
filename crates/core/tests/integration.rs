@@ -75,13 +75,13 @@ mod integration_tests {
 
         let edges = vec![
             Edge {
-                i: "BP".to_owned(),
-                j: "Hypertension".to_owned(),
+                node_a: "BP".to_owned(),
+                node_b: "Hypertension".to_owned(),
                 coupling: bp_hyp,
             },
             Edge {
-                i: "Hypertension".to_owned(),
-                j: "BMI".to_owned(),
+                node_a: "Hypertension".to_owned(),
+                node_b: "BMI".to_owned(),
                 coupling: hyp_bmi,
             },
         ];
@@ -243,8 +243,8 @@ nodes:
       p: 0.3
     tau: 365.0
 edges:
-  - from: blood_pressure
-    to: hypertension
+  - node_a: blood_pressure
+    node_b: hypertension
     coupling:
       - [0.01]
       - [0.005]

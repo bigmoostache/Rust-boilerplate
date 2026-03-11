@@ -56,13 +56,13 @@ nodes:
       sigma2: 16.0
     tau: 90.0
 edges:
-  - from: blood_pressure
-    to: hypertension
+  - node_a: blood_pressure
+    node_b: hypertension
     coupling:
       - [0.01]
       - [0.005]
-  - from: hypertension
-    to: bmi
+  - node_a: hypertension
+    node_b: bmi
     coupling:
       - [0.1, 0.0]
 instruments:
@@ -172,8 +172,8 @@ nodes:
     family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
     tau: 1.0
 edges:
-  - from: A
-    to: nonexistent
+  - node_a: A
+    node_b: nonexistent
     coupling:
       - [1.0, 0.0]
       - [0.0, 1.0]
@@ -203,8 +203,8 @@ nodes:
     family: { type: bernoulli, p: 0.5 }
     tau: 1.0
 edges:
-  - from: A
-    to: B
+  - node_a: A
+    node_b: B
     coupling:
       - [1.0, 0.0]
       - [0.0, 1.0]
@@ -422,7 +422,7 @@ nodes:
   - name: "A"
     family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
     tau: 1.0
-    edges_to:
+    coupled_with:
       - node: B
         coupling:
           - [0.1]
@@ -455,11 +455,10 @@ nodes:
   - name: "B"
     family: { type: bernoulli, p: 0.5 }
     tau: 1.0
-    edges_from:
+    coupled_with:
       - node: A
         coupling:
-          - [0.1]
-          - [0.0]
+          - [0.1, 0.0]
 edges: []
 instruments: []
 observations: []
@@ -469,7 +468,7 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
         assert!(result.is_ok(), "parse failed: {:?}", result.as_ref().err());
         if let Ok(config) = result {
             assert_eq!(config.graph.num_edges(), 1);
-            // Edge should be A → B (from declares: A → this_node=B)
+            // Edge connects A and B
             assert_eq!(config.graph.neighbors("A").len(), 1);
             assert_eq!(config.graph.neighbors("B").len(), 1);
         }
@@ -482,7 +481,7 @@ nodes:
   - name: "flu"
     family: { type: bernoulli, p: 0.25 }
     tau: 14.0
-    edges_to:
+    coupled_with:
       - node: headache
         coupling: [[1.5]]
       - node: body_aches
@@ -500,8 +499,8 @@ nodes:
     family: { type: bernoulli, p: 0.25 }
     tau: 10.0
 edges:
-  - from: tonsillitis
-    to: sore_throat
+  - node_a: tonsillitis
+    node_b: sore_throat
     coupling: [[2.5]]
 instruments: []
 observations: []

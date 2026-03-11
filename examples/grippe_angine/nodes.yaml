@@ -42,7 +42,7 @@ nodes:
       type: bernoulli
       p: 0.25
     tau: 14.0
-    edges_to:
+    coupled_with:
       # flu → temperature (1×2): moderate-to-high fever
       - node: temperature
         coupling: [[0.01, 0.0]]
@@ -61,7 +61,7 @@ nodes:
       type: bernoulli
       p: 0.25
     tau: 10.0
-    edges_to:
+    coupled_with:
       # tonsillitis → temperature (1×2): mild-to-moderate fever
       - node: temperature
         coupling: [[0.008, 0.0]]
