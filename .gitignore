@@ -3,3 +3,5 @@
 *.swo
 .DS_Store
 .env
+# test-global
+# test-project-rules

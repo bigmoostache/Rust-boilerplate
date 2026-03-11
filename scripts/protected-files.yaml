@@ -43,8 +43,14 @@
 - path: scripts/allowed-lint-exceptions.yaml
   whole_file: true
 
-# --- Build & deploy scripts ---
-- path: deploy_local.sh
+# --- Chain update wrapper ---
+- path: scripts/chain.sh
   whole_file: true
-- path: run.sh
+
+# --- Callback scripts ---
+- path: scripts/callbacks/local.sh
+  whole_file: true
+- path: scripts/callbacks/global.sh
+  whole_file: true
+- path: scripts/callbacks/project-rules.sh
   whole_file: true

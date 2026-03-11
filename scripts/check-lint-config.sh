@@ -16,7 +16,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CHAIN_FILE="$SCRIPT_DIR/lint-config.chain"
+CHAIN_FILE="$ROOT/.chain"
 MANIFEST="$SCRIPT_DIR/protected-files.yaml"
 
 # --- YAML parser (pure bash, no dependencies) ---
