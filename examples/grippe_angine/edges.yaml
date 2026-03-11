@@ -1,90 +1,15 @@
-# Grippe vs. Angine — edge definitions
+# Grippe vs. Angine — shared symptom correlations
 #
-# Coupling matrices between disease variables and symptoms.
-# These encode clinical knowledge about symptom–disease associations.
-#
-# Coupling semantics in an MRF: B_ij operates BIDIRECTIONALLY.
-# The coupling energy E[T_i]^T B_ij E[T_j] affects BOTH nodes.
-#
-# For Bernoulli→Bernoulli (1×1):
-#   - η_i gets += B * E[T_j] = B * p_j
-#   - η_j gets += B^T * E[T_i] = B * p_i
-#   So the coupling adds to both logits.
-#
-# For Bernoulli→Gaussian (1×2):
-#   - Gaussian η gets += B^T * p_disease  (shifts mean/precision)
-#   - Bernoulli η gets += B * E[T_gauss] = B * [E[x], E[x²]]
-#   B₁₁ > 0 means higher disease → higher temperature mean.
-#
-# CALIBRATION NOTES:
-# - Bernoulli exact obs: true adds η+=1, false adds η+=0
-#   So observing false does NOT actively push η down.
-# - Keep Bernoulli→Bernoulli couplings ≤ 2.5 to avoid
-#   feedback loops overwhelming false observations.
-# - Temperature couplings must be tiny (B~0.01) because
-#   E[T_gauss] = [μ/σ², μ²+σ²] has large values (~150, ~1500).
+# Only symptom↔symptom edges go here.
+# Disease→symptom edges are declared inline on the disease nodes
+# in nodes.yaml.
 
 edges:
-  # ═══════════════════════════════════════════════════════════
-  # Flu → symptoms
-  # ═══════════════════════════════════════════════════════════
-
-  # flu (d=1) → temperature (d=2): 1×2 coupling
-  # Flu causes moderate-to-high fever. Small B₁₁ because
-  # E[T_gauss] values are large (~148 for η₁).
-  - from: flu
-    to: temperature
-    coupling:
-      - [0.01, 0.0]
-
-  # flu (d=1) → headache (d=1): 1×1 coupling
-  # Headache is common with flu (systemic inflammation)
-  - from: flu
+  # temperature (d=2) ↔ headache (d=1): 2×1 coupling
+  # Fever and headache are correlated regardless of cause.
+  # Small coupling since E[T_gauss] values are large.
+  - from: temperature
     to: headache
     coupling:
-      - [1.5]
-
-  # flu (d=1) → body_aches (d=1): 1×1 coupling
-  # Body aches are THE hallmark symptom of flu
-  - from: flu
-    to: body_aches
-    coupling:
-      - [2.0]
-
-  # ═══════════════════════════════════════════════════════════
-  # Tonsillitis → symptoms
-  # ═══════════════════════════════════════════════════════════
-
-  # tonsillitis (d=1) → temperature (d=2): 1×2 coupling
-  # Tonsillitis causes mild-to-moderate fever (weaker than flu)
-  - from: tonsillitis
-    to: temperature
-    coupling:
-      - [0.008, 0.0]
-
-  # tonsillitis (d=1) → sore_throat (d=1): 1×1 coupling
-  # Sore throat is THE hallmark symptom of tonsillitis
-  - from: tonsillitis
-    to: sore_throat
-    coupling:
-      - [2.5]
-
-  # tonsillitis (d=1) → headache (d=1): 1×1 coupling
-  # Tonsillitis can cause mild headache (referred pain, inflammation)
-  # Weaker than flu→headache
-  - from: tonsillitis
-    to: headache
-    coupling:
-      - [0.5]
-
-  # ═══════════════════════════════════════════════════════════
-  # Disease ↔ disease competition
-  # ═══════════════════════════════════════════════════════════
-
-  # flu (d=1) ↔ tonsillitis (d=1): 1×1 NEGATIVE coupling
-  # Soft mutual exclusion: having one makes the other less likely.
-  # Keep small (-0.3) so it nudges without dominating.
-  - from: flu
-    to: tonsillitis
-    coupling:
-      - [-0.3]
+      - [0.005]
+      - [0.0]

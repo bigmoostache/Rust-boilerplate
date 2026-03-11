@@ -2,6 +2,9 @@
 #
 # Clinical variables (symptoms) and disease variables
 # shared across all patients.
+#
+# Disease→symptom edges are declared inline on disease nodes.
+# This keeps the causal structure visible next to the disease definition.
 
 nodes:
   # -- Clinical variables (symptoms) --
@@ -33,14 +36,38 @@ nodes:
   # -- Disease variables --
   # Priors reflect clinical setting: patients presenting with symptoms
   # have higher a priori disease probability than the general population.
+
   - name: "flu"
     family:
       type: bernoulli
       p: 0.25
     tau: 14.0
+    edges_to:
+      # flu → temperature (1×2): moderate-to-high fever
+      - node: temperature
+        coupling: [[0.01, 0.0]]
+      # flu → headache (1×1): common with flu
+      - node: headache
+        coupling: [[1.5]]
+      # flu → body_aches (1×1): hallmark symptom
+      - node: body_aches
+        coupling: [[2.0]]
+      # flu ↔ tonsillitis (1×1): soft mutual exclusion
+      - node: tonsillitis
+        coupling: [[-0.3]]
 
   - name: "tonsillitis"
     family:
       type: bernoulli
       p: 0.25
     tau: 10.0
+    edges_to:
+      # tonsillitis → temperature (1×2): mild-to-moderate fever
+      - node: temperature
+        coupling: [[0.008, 0.0]]
+      # tonsillitis → sore_throat (1×1): hallmark symptom
+      - node: sore_throat
+        coupling: [[2.5]]
+      # tonsillitis → headache (1×1): mild referred pain
+      - node: headache
+        coupling: [[0.5]]
