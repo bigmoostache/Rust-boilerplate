@@ -1,24 +1,11 @@
-//! Core library for the Baillissime application.
+//! Core library for the Baillissime virtual patient model.
+//!
+//! This crate implements a probabilistic graphical model (MRF) where
+//! each node carries a distribution from an exponential family.
+//! Inference produces a coherent Bayesian update of the patient state.
 
-/// Returns a greeting for the given name.
-///
-/// # Examples
-///
-/// ```
-/// let g = app_core::greet("Alice");
-/// assert_eq!(g, "Hello, Alice!");
-/// ```
-#[must_use]
-pub fn greet(name: &str) -> String {
-    format!("Hello, {name}!")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_greet() {
-        assert_eq!(greet("World"), "Hello, World!");
-    }
-}
+pub mod distributions;
+pub mod graph;
+pub mod inference;
+pub mod objective;
+pub mod observation;

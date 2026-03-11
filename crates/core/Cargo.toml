@@ -11,6 +11,7 @@ keywords = ["baillissime"]
 categories = ["development-tools"]
 
 [dependencies]
+nalgebra.workspace = true
 
 [lints]
 workspace = true

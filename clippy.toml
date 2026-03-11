@@ -3,3 +3,8 @@
 
 # Maximum cognitive complexity before triggering a warning
 cognitive-complexity-threshold = 25
+
+# Allow arithmetic operations on f64 (never panics — produces NaN/Inf)
+# and on nalgebra matrix/vector types (dimensions validated at construction)
+arithmetic-side-effects-allowed = ["f64"]
+arithmetic-side-effects-allowed-binary = [["nalgebra::Matrix", "*"], ["*", "nalgebra::Matrix"]]
