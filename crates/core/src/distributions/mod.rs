@@ -15,6 +15,8 @@ mod poisson;
 
 use nalgebra::DVector;
 
+use crate::schema::raw::FamilyDef;
+
 /// Natural parameters for the seven supported exponential families.
 ///
 /// The natural parameterization `η` is chosen so that the density writes
@@ -149,10 +151,9 @@ impl NaturalParams {
     #[must_use]
     pub fn cross_entropy(&self, other: &Self) -> f64 {
         match (self, other) {
-            (
-                Self::Gaussian { eta1: a1, eta2: a2 },
-                Self::Gaussian { eta1: b1, eta2: b2 },
-            ) => gaussian::cross_entropy(*a1, *a2, *b1, *b2),
+            (Self::Gaussian { eta1: a1, eta2: a2 }, Self::Gaussian { eta1: b1, eta2: b2 }) => {
+                gaussian::cross_entropy(*a1, *a2, *b1, *b2)
+            }
             (Self::Gamma { eta1: a1, eta2: a2 }, Self::Gamma { eta1: b1, eta2: b2 }) => {
                 gamma::cross_entropy(*a1, *a2, *b1, *b2)
             }
@@ -313,16 +314,59 @@ impl NaturalParams {
                 (s.len() == 1).then_some(Self::Bernoulli { eta1: e1 })
             }
             Self::Categorical { eta: ref_eta } if s.len() == ref_eta.len() => {
-                Some(Self::Categorical {
-                    eta: s.to_vec(),
-                })
+                Some(Self::Categorical { eta: s.to_vec() })
             }
             Self::Dirichlet { alpha: ref_alpha } if s.len() == ref_alpha.len() => {
-                Some(Self::Dirichlet {
-                    alpha: s.to_vec(),
-                })
+                Some(Self::Dirichlet { alpha: s.to_vec() })
             }
             Self::Categorical { .. } | Self::Dirichlet { .. } => None,
+        }
+    }
+
+    /// Convert natural parameters back to canonical (human-readable) form.
+    ///
+    /// Returns a [`FamilyDef`] suitable for YAML serialization.
+    #[must_use]
+    pub fn to_canonical(&self) -> FamilyDef {
+        match self {
+            Self::Gaussian { eta1, eta2 } => {
+                let sigma2 = -1.0 / (2.0 * eta2);
+                FamilyDef::Gaussian {
+                    mu: eta1 * sigma2,
+                    sigma2,
+                }
+            }
+            Self::Gamma { eta1, eta2 } => FamilyDef::Gamma {
+                alpha: eta1 + 1.0,
+                beta: -eta2,
+            },
+            Self::Beta { eta1, eta2 } => FamilyDef::Beta {
+                alpha: eta1 + 1.0,
+                beta: eta2 + 1.0,
+            },
+            Self::Poisson { eta1 } => FamilyDef::Poisson { lambda: eta1.exp() },
+            Self::Bernoulli { eta1 } => {
+                let p = if *eta1 >= 0.0 {
+                    1.0 / (1.0 + (-eta1).exp())
+                } else {
+                    let e = eta1.exp();
+                    e / (1.0 + e)
+                };
+                FamilyDef::Bernoulli { p }
+            }
+            Self::Categorical { eta } => {
+                // Recover probabilities from log-ratios via softmax
+                let max_eta = eta.iter().copied().fold(0.0_f64, f64::max);
+                let sum_exp: f64 =
+                    eta.iter().map(|&e| (e - max_eta).exp()).sum::<f64>() + (-max_eta).exp();
+                let log_z = max_eta + sum_exp.ln();
+                let mut probs: Vec<f64> = eta.iter().map(|&e| (e - log_z).exp()).collect();
+                probs.push((-log_z).exp());
+                FamilyDef::Categorical { probs }
+            }
+            Self::Dirichlet { alpha } => FamilyDef::Dirichlet {
+                alpha: alpha.clone(),
+            },
         }
     }
 }

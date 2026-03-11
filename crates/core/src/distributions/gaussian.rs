@@ -29,12 +29,7 @@ pub(super) fn entropy(eta1: f64, eta2: f64) -> f64 {
 ///
 /// `= η_other · E_self[T(x)] − A(η_other)`
 /// `= η₁' · E[x] + η₂' · E[x²] − A(η')`
-pub(super) fn cross_entropy(
-    me_eta1: f64,
-    me_eta2: f64,
-    other_eta1: f64,
-    other_eta2: f64,
-) -> f64 {
+pub(super) fn cross_entropy(me_eta1: f64, me_eta2: f64, other_eta1: f64, other_eta2: f64) -> f64 {
     let (mu, sigma2) = canonical(me_eta1, me_eta2);
     let e_x = mu;
     let e_x2 = mu.mul_add(mu, sigma2);

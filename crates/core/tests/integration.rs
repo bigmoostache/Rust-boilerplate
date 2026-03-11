@@ -1,11 +1,16 @@
 //! Integration tests for the full inference pipeline.
 
 use nalgebra::DMatrix;
+use serde as _;
+use serde_yaml as _;
 
 use app_core::distributions::NaturalParams;
 use app_core::graph::{Edge, Graph, Node};
 use app_core::inference::coordinate_ascent;
 use app_core::observation::Observation;
+use app_core::schema::output::{build_result, to_yaml};
+use app_core::schema::validate::parse_yaml;
+use app_core::temporal::{advance_and_relax, relax_graph};
 
 fn make_node(id: u32, name: &str, params: NaturalParams, tau: f64) -> Node {
     Node {
@@ -219,4 +224,155 @@ fn categorical_observation() {
         "η₁ should be unchanged, got {}",
         eta[1]
     );
+}
+
+/// Full pipeline: YAML → parse → relax → infer → output YAML → verify.
+#[test]
+fn yaml_pipeline_roundtrip() {
+    let input_yaml = r#"
+nodes:
+  - id: 0
+    name: "blood_pressure"
+    family:
+      type: gaussian
+      mu: 120.0
+      sigma2: 225.0
+    tau: 30.0
+  - id: 1
+    name: "hypertension"
+    family:
+      type: bernoulli
+      p: 0.3
+    tau: 365.0
+edges:
+  - from: 0
+    to: 1
+    coupling:
+      - [0.01]
+      - [0.005]
+observations:
+  - type: gaussian_noise
+    node: 0
+    value: 145.0
+    noise_var: 25.0
+inference:
+  max_iter: 200
+  tolerance: 1.0e-10
+  delta_t: 7.0
+"#;
+    // Parse
+    let config = parse_yaml(input_yaml).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(config.graph.num_nodes(), 2);
+    assert_eq!(config.graph.num_edges(), 1);
+
+    // Relax
+    let mut graph = config.graph;
+    relax_graph(&mut graph, config.delta_t);
+
+    // Infer
+    let result = coordinate_ascent(&mut graph, config.max_iter, config.tolerance);
+    assert!(result.converged, "inference did not converge");
+
+    // Build output and serialize to YAML
+    let output = build_result(&graph, &result);
+    assert!(output.converged);
+    assert_eq!(output.posteriors.len(), 2);
+
+    let yaml_str = to_yaml(&output).unwrap_or_else(|e| panic!("serialization failed: {e}"));
+    assert!(!yaml_str.is_empty(), "output YAML should not be empty");
+    assert!(yaml_str.contains("converged: true"));
+    assert!(yaml_str.contains("blood_pressure"));
+    assert!(yaml_str.contains("hypertension"));
+}
+
+/// Temporal relaxation + inference pipeline: run inference twice
+/// with `advance_and_relax` in between to verify state propagation.
+#[test]
+fn temporal_advance_then_reinfer() {
+    let params = NaturalParams::Gaussian {
+        eta1: 0.0,
+        eta2: -0.5,
+    };
+    let mut graph = Graph::new(vec![make_node(0, "X", params, 1.0)], vec![]);
+
+    // First inference: observe x=5
+    graph.add_observation(
+        0,
+        Observation::GaussianNoise {
+            value: 5.0,
+            noise_var: 1.0,
+        },
+    );
+    let r1 = coordinate_ascent(&mut graph, 100, 1e-12);
+    assert!(r1.converged);
+
+    // Posterior after first inference: η₁=5, η₂=-1 → μ=2.5, σ²=0.5
+    let NaturalParams::Gaussian { eta1: e1_first, .. } = graph.nodes[0].post else {
+        panic!("wrong family");
+    };
+    assert!((e1_first - 5.0).abs() < 1e-10);
+
+    // Advance time: copy post→prev, then relax toward epidemio
+    advance_and_relax(&mut graph, 2.0_f64.ln()); // decay = 0.5
+
+    // After advance: prev should be old post
+    let NaturalParams::Gaussian { eta1: prev1, .. } = graph.nodes[0].prev else {
+        panic!("wrong family");
+    };
+    assert!((prev1 - 5.0).abs() < 1e-10);
+
+    // Relax: 0.5*epidemio + 0.5*prev = 0.5*0 + 0.5*5 = 2.5
+    let NaturalParams::Gaussian { eta1: relax1, .. } = graph.nodes[0].relax else {
+        panic!("wrong family");
+    };
+    assert!((relax1 - 2.5).abs() < 1e-10);
+
+    // Clear observations and reinfer (no new obs)
+    graph.observations.clear();
+    let r2 = coordinate_ascent(&mut graph, 100, 1e-12);
+    assert!(r2.converged);
+
+    // Without observations, posterior = relaxed prior
+    let NaturalParams::Gaussian {
+        eta1: e1_second, ..
+    } = graph.nodes[0].post
+    else {
+        panic!("wrong family");
+    };
+    assert!((e1_second - 2.5).abs() < 1e-10);
+}
+
+/// Output serialization: verify all expected fields are present.
+#[test]
+fn output_yaml_structure() {
+    let params = NaturalParams::Gaussian {
+        eta1: 0.0,
+        eta2: -0.5,
+    };
+    let mut graph = Graph::new(vec![make_node(0, "test_node", params, 1.0)], vec![]);
+    graph.add_observation(
+        0,
+        Observation::GaussianNoise {
+            value: 1.0,
+            noise_var: 1.0,
+        },
+    );
+
+    let result = coordinate_ascent(&mut graph, 100, 1e-12);
+    let output = build_result(&graph, &result);
+    let yaml_str = to_yaml(&output).unwrap_or_else(|e| panic!("{e}"));
+
+    // Verify structural fields
+    assert!(yaml_str.contains("converged:"));
+    assert!(yaml_str.contains("iterations:"));
+    assert!(yaml_str.contains("max_change:"));
+    assert!(yaml_str.contains("elbo:"));
+    assert!(yaml_str.contains("coupling:"));
+    assert!(yaml_str.contains("prior:"));
+    assert!(yaml_str.contains("observation:"));
+    assert!(yaml_str.contains("entropy:"));
+    assert!(yaml_str.contains("posteriors:"));
+    assert!(yaml_str.contains("natural_params:"));
+    assert!(yaml_str.contains("test_node"));
+    assert!(yaml_str.contains("gaussian"));
 }

@@ -30,18 +30,16 @@ pub(super) fn entropy(eta1: f64, eta2: f64) -> f64 {
     let (alpha, beta) = canonical(eta1, eta2);
     let ln_beta_fn = lgamma(alpha) + lgamma(beta) - lgamma(alpha + beta);
     let psi_sum = digamma(alpha + beta);
-    (alpha + beta - 2.0).mul_add(psi_sum, ln_beta_fn - (alpha - 1.0).mul_add(digamma(alpha), (beta - 1.0) * digamma(beta)))
+    (alpha + beta - 2.0).mul_add(
+        psi_sum,
+        ln_beta_fn - (alpha - 1.0).mul_add(digamma(alpha), (beta - 1.0) * digamma(beta)),
+    )
 }
 
 /// `E_self[ln p_other(x)]` where both are Beta.
 ///
 /// Uses direct field computation to avoid `DVector` indexing.
-pub(super) fn cross_entropy(
-    me_eta1: f64,
-    me_eta2: f64,
-    other_eta1: f64,
-    other_eta2: f64,
-) -> f64 {
+pub(super) fn cross_entropy(me_eta1: f64, me_eta2: f64, other_eta1: f64, other_eta2: f64) -> f64 {
     let (me_alpha, me_beta) = canonical(me_eta1, me_eta2);
     let psi_sum = digamma(me_alpha + me_beta);
     let e_ln_x = digamma(me_alpha) - psi_sum;

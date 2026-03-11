@@ -54,12 +54,7 @@ pub(super) fn entropy(eta1: f64, eta2: f64) -> f64 {
 /// `E_self[ln p_other(x)]` where both are Gamma.
 ///
 /// Uses direct field computation to avoid `DVector` indexing.
-pub(super) fn cross_entropy(
-    me_eta1: f64,
-    me_eta2: f64,
-    other_eta1: f64,
-    other_eta2: f64,
-) -> f64 {
+pub(super) fn cross_entropy(me_eta1: f64, me_eta2: f64, other_eta1: f64, other_eta2: f64) -> f64 {
     let (me_alpha, me_beta) = canonical(me_eta1, me_eta2);
     let e_ln_x = digamma(me_alpha) - me_beta.ln();
     let e_x = me_alpha / me_beta;

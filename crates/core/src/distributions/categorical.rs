@@ -25,7 +25,9 @@ fn probabilities(eta: &[f64]) -> Vec<f64> {
 pub(super) fn expected_suff_stats(eta: &[f64]) -> DVector<f64> {
     let probs = probabilities(eta);
     // Drop the last element (p_K) — sufficient stats are for classes 1..K-1
-    let stats = probs.split_last().map_or(probs.as_slice(), |(_, rest)| rest);
+    let stats = probs
+        .split_last()
+        .map_or(probs.as_slice(), |(_, rest)| rest);
     DVector::from_vec(stats.to_vec())
 }
 
@@ -47,11 +49,7 @@ pub(super) fn entropy(eta: &[f64]) -> f64 {
 pub(super) fn cross_entropy(me_eta: &[f64], other_eta: &[f64]) -> f64 {
     let probs = probabilities(me_eta);
     let a_other = log_partition(other_eta);
-    let dot: f64 = other_eta
-        .iter()
-        .zip(probs.iter())
-        .map(|(o, p)| o * p)
-        .sum();
+    let dot: f64 = other_eta.iter().zip(probs.iter()).map(|(o, p)| o * p).sum();
     dot - a_other
 }
 

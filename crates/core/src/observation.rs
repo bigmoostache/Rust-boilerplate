@@ -95,7 +95,10 @@ impl Observation {
                 let mu = eta1 * sigma2;
                 let ex2 = mu.mul_add(mu, sigma2); // E[x²] = μ² + σ²
                 let mse = (2.0 * value).mul_add(-mu, value * value) + ex2;
-                (-0.5f64).mul_add((2.0 * std::f64::consts::PI * noise_var).ln(), -(mse / (2.0 * noise_var)))
+                (-0.5f64).mul_add(
+                    (2.0 * std::f64::consts::PI * noise_var).ln(),
+                    -(mse / (2.0 * noise_var)),
+                )
             }
 
             (Self::CategoricalExact { category }, NaturalParams::Categorical { eta }) => {
@@ -166,7 +169,10 @@ impl Observation {
             }
 
             _ => {
-                debug_assert!(false, "incompatible observation type for this distribution family");
+                debug_assert!(
+                    false,
+                    "incompatible observation type for this distribution family"
+                );
                 f64::NAN
             }
         }
