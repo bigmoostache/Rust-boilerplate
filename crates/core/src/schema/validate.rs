@@ -327,11 +327,11 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
         });
     }
     if let Some(es) = inference.entropy_scale
-        && es <= 0.0
+        && es < 0.0
     {
         errors.push(SchemaError {
             path: "inference.entropy_scale".to_owned(),
-            message: format!("entropy_scale must be > 0, got {es}"),
+            message: format!("entropy_scale must be >= 0, got {es}"),
         });
     }
 

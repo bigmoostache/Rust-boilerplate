@@ -145,7 +145,9 @@ fn compute_optimal_eta(graph: &Graph, node_idx: usize, entropy_scale: f64) -> DV
     }
 
     // Apply entropy scaling: η_new = (1/λ) · (η_relax + coupling + obs)
-    if (entropy_scale - 1.0).abs() > f64::EPSILON {
+    // When λ = 0 (no entropy term), skip scaling — the optimal update
+    // is the raw sum of prior + coupling + observation contributions.
+    if entropy_scale.abs() > f64::EPSILON && (entropy_scale - 1.0).abs() > f64::EPSILON {
         let inv_lambda = 1.0 / entropy_scale;
         for i in 0..eta.len() {
             if let Some(v) = eta.get_mut(i) {
