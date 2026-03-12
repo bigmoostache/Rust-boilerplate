@@ -1,218 +1,64 @@
 # Modèle Graphique Probabiliste Patient
 
-## Vue d'ensemble
+## 1. Vue d'ensemble
 
-Un graphe de Markov (MRF) où chaque nœud représente une variable clinique, portant une distribution paramétrisée. L'inférence produit une mise à jour bayésienne cohérente de l'état du patient, intégrant épidémiologie, historique et observations.
+Un champ de Markov (MRF) où chaque nœud $i$ représente une variable clinique portant une **distribution paramétrisée** — pas une valeur ponctuelle. L'inférence produit une mise à jour bayésienne cohérente de l'état du patient, intégrant épidémiologie populationnelle, historique individuel et observations courantes.
 
 ---
 
-## Structure du graphe
+## 2. Structure du graphe
 
-- **Nœuds** : variables cliniques (glycémie, CRP, compliance, diagnostic, classe de risque...)
-- **Arêtes** : couplages entre variables, paramétrés par $\beta_{ij}$
-- **Familles supportées** : Gaussienne, Gamma, Beta, Poisson, Bernoulli, Categorical, Dirichlet
-  - Pour les variables binaires, **utiliser Beta plutôt que Bernoulli** — voir section dédiée ci-dessous
+- **Nœuds** : variables cliniques (glycémie, CRP, compliance, diagnostic, classe de risque…)  
+- **Arêtes** : couplages entre variables, paramétrés par des matrices $B_{ij}$  
+- **Familles autorisées** : voir section 4 — les lois à un seul paramètre sont interdites
 
 Chaque nœud $i$ porte quatre états successifs :
 
 | Notation | Nom | Description |
 |---|---|---|
-| $\theta_i^{\text{epidemio}}$ | prior non informé | distribution populationnelle de référence, fixe |
-| $\theta_i^{\text{prev}}$ | prior non relaxé | état patient issu de l'inférence précédente |
+| $\theta_i^{\text{epidemio}}$ | prior épidémiologique | distribution populationnelle de référence, fixe |
+| $\theta_i^{\text{prev}}$ | prior historique | $\theta_i^{\text{post}}$ de l'inférence précédente |
 | $\theta_i^{\text{relax}}$ | prior relaxé | $\theta_i^{\text{prev}}$ ramené vers $\theta_i^{\text{epidemio}}$ à vitesse $\tau_i$ |
-| $\theta_i^{\text{post}}$ | state / posterior | état courant, solution de l'optimisation |
-
-Le posterior est défini comme :
-
-$$\boldsymbol{\theta}^{\text{post}} = \arg\max_{\Theta} \, \mathcal{F}(\mathbf{x}, \Theta^{\text{relax}}, \boldsymbol{\beta}, \mathcal{O})$$
+| $\theta_i^{\text{post}}$ | posterior courant | solution de l'optimisation à l'instant $t$ |
 
 ---
 
-## Objectif variationnel (ELBO)
+## 3. Objectif variationnel
 
-### Étape 1 — Cas scalaire : le MRF ponctuel
+### 3.1 ELBO
 
-Si chaque nœud portait une valeur ponctuelle $x_i \in \mathbb{R}$ (cas Ising généralisé), la log-probabilité jointe s'écrirait naturellement :
+On optimise sous hypothèse mean-field $q(\mathbf{x}) = \prod_i p_{\theta_i^{\text{post}}}(x_i)$. L'objectif est :
 
-$$\log P(\mathbf{x}) = \sum_i \log p_{\theta_i^{\text{relax}}}(x_i) + \sum_{(i,j)} \beta_{ij} \, T(x_i) \cdot T(x_j) - \log Z$$
+$$\boxed{\mathcal{F} = \underbrace{\sum_{(i,j)} \mathbb{E}[T_i]^T B_{ij}\, \mathbb{E}[T_j]}_{\text{couplages}} + \underbrace{\sum_i \mathbb{E}\bigl[\log p_{\theta_i^{\text{relax}}}\bigr]}_{\text{priors relaxés}} + \underbrace{\sum_i \sum_{k \in \mathcal{O}_i} \mathbb{E}\bigl[\log p_{\varepsilon_k}\bigr]}_{\text{observations}} + \underbrace{\lambda_S \sum_i \mathbb{H}(p_{\theta_i^{\text{post}}})}_{\text{entropie}}}$$
 
-- le premier terme est la vraisemblance locale de chaque valeur sous son prior relaxé
-- le second est le couplage à la Ising, généralisé via les statistiques suffisantes $T$
-- $\log Z$ est la constante de normalisation
+- $T_i$ : statistiques suffisantes canoniques du nœud $i$ (ex. $(x, x^2)$ pour une Gaussienne)  
+- $B_{ij} \in \mathbb{R}^{d_i \times d_j}$ : matrice de couplage entre familles de dimensions éventuellement distinctes  
+- $\lambda_S \geq 0$ : échelle globale d'entropie ($\lambda_S = 1$ par défaut)  
+- $Z$ disparaît de l'objectif — il ne dépend pas de $\Theta^{\text{post}}$  
+- Objectif **entièrement analytique** pour toutes les familles exponentielles
 
-### Étape 2 — Passage aux distributions
+Les quatre termes sont en tension :
 
-On ne travaille pas sur des valeurs ponctuelles mais sur des distributions $p_{\theta_i^{\text{post}}}$. On évalue donc $\log P$ **en moyenne** sous la distribution jointe factorisée $q(\mathbf{x}) = \prod_i p_{\theta_i^{\text{post}}}(x_i)$ — hypothèse mean field, justifiée ici par la contrainte structurelle de famille paramétrique fixée sur chaque nœud :
+| Terme | Rôle |
+|---|---|
+| Couplages | aligne les $\mathbb{E}[T]$ des nœuds voisins |
+| Prior relaxé | ancre vers l'épidémiologie et l'historique patient |
+| Observations | met à jour selon les mesures disponibles |
+| Entropie ($\times\lambda_S$) | évite le collapse, maintient l'incertitude |
 
-$$\mathbb{E}_q\left[\log P(\mathbf{x})\right] = \sum_i \mathbb{E}_{\theta_i^{\text{post}}}\left[\log p_{\theta_i^{\text{relax}}}(x_i)\right] + \sum_{(i,j)} \beta_{ij} \cdot \mathbb{E}_{\theta_i^{\text{post}}}[T(x_i)] \cdot \mathbb{E}_{\theta_j^{\text{post}}}[T(x_j)] - \log Z$$
+### 3.2 Point fixe
 
-Le terme de couplage factorise car $x_i$ et $x_j$ sont indépendants sous $q$.
+En annulant le gradient naturel $\nabla_{\eta_i}\mathcal{F} = 0$, on obtient le point fixe analytique pour le nœud $i$ :
 
-### Étape 3 — $Z$ disparaît
+$$\boxed{\eta_i^* = \frac{\displaystyle\eta_i^{\text{relax}} + \sum_{k \in \mathcal{O}_i} \eta_k^{\text{obs}} + \sum_{j \in \mathcal{N}(i)} B_{ij}\,\mathbb{E}_j[T_j]}{1 + |\mathcal{O}_i| + \lambda_S}}$$
 
-$Z$ dépend de $\Theta^{\text{relax}}$ et $\boldsymbol{\beta}$, mais **pas de $\Theta^{\text{post}}$**. C'est une constante pour l'optimisation — elle disparaît.
-
-### Étape 4 — Ajout de l'entropie
-
-$\mathbb{E}_q[\log P]$ seul pousse $q$ à coller au mode de $P$ — collapse vers une distribution dégénérée (variance nulle). On ajoute $\mathbb{H}(q)$ pour obtenir l'ELBO complet, objectif bayésien canonique qui équilibre fidélité au modèle et maintien de l'incertitude.
-
-### Étape 5 — Observations $\mathcal{O}_i$
-
-Les observations s'ajoutent comme des potentiels nodaux supplémentaires dans $\log P$, indépendants du prior. Chaque nœud peut recevoir zéro, une ou plusieurs observations — elles s'accumulent par somme de log-vraisemblances.
-
-### Résultat
-
-$$\boxed{\mathcal{F}(\Theta^{\text{post}}, \Theta^{\text{relax}}, \boldsymbol{\beta}, \mathcal{O}) = \underbrace{\sum_{(i,j)} \mathbb{E}_{\theta_i^{\text{post}}}[T_i]^T \, B_{ij} \, \mathbb{E}_{\theta_j^{\text{post}}}[T_j]}_{\text{couplages}} + \underbrace{\sum_i \mathbb{E}_{\theta_i^{\text{post}}}[\log p_{\theta_i^{\text{relax}}}]}_{\text{priors relaxés}} + \underbrace{\sum_i \sum_{k \in \mathcal{O}_i} \mathbb{E}_{\theta_i^{\text{post}}}[\log p_{\varepsilon_k}]}_{\text{observations}} + \underbrace{\sum_i \mathbb{H}(p_{\theta_i^{\text{post}}})}_{\text{entropie}}}$$
-
-- **Entièrement analytique** pour toutes les familles exponentielles
-- $Z$ éliminé — pas d'intractabilité résiduelle dans l'objectif
-- Les nœuds sans observation sont imputés naturellement via les couplages
-- Les $T_i$ sont les **statistiques suffisantes** canoniques de chaque famille (ex: $(\mu, \mu^2+\sigma^2)$ pour une Gaussienne)
+où $\eta_i = \eta(\theta_i^{\text{post}})$ sont les paramètres naturels du nœud $i$, et $D_i = 1 + |\mathcal{O}_i| + \lambda_S$ est le **dénominateur de normalisation** propre à chaque nœud. Le posterior est une moyenne pondérée entre prior relaxé, observations et messages des voisins — l'intuition bayésienne attendue.
 
 ---
 
-## Construction des termes de couplage
+## 4. Familles autorisées
 
-### Dérivation depuis Ising
-
-Dans le modèle d'Ising original, la **log-probabilité jointe** sur des spins $s_i \in \{-1, +1\}$ s'écrit :
-
-$$\log P(\mathbf{s}) = \sum_{(i,j)} \beta_{ij} \, s_i \, s_j + \sum_i h_i \, s_i - \log Z$$
-
-Le terme $\beta_{ij} \, s_i \, s_j$ est donc une contribution à la **log-prob** — pas à la prob. Il module l'énergie du système : configurations où $s_i$ et $s_j$ sont alignés sont plus ou moins probables selon le signe de $\beta_{ij}$.
-
-La généralisation à des variables continues $x_i \in \mathbb{R}$ est directe : on remplace $s_i$ par une statistique $h(x_i)$ de la variable. La log-prob jointe devient :
-
-$$\log P(\mathbf{x}) = \sum_i \log p_{\theta_i^{\text{relax}}}(x_i) + \sum_{(i,j)} \beta_{ij} \cdot h(x_i) \cdot h(x_j) - \log Z$$
-
-Le signe de $\beta_{ij}$ contrôle la nature du couplage : $\beta_{ij} > 0$ favorise l'alignement des valeurs de $h$, $\beta_{ij} < 0$ les oppose. La question qui reste est : quel choix de $h$ ?
-
-### Choix de $h$ : pourquoi les statistiques suffisantes
-
-Le choix de $h$ n'est pas anodin. Pour une famille exponentielle, la distribution s'écrit :
-
-$$p_\theta(x) = \exp\left(\eta(\theta)^T T(x) - A(\theta)\right)$$
-
-Choisir $h = T$ — les statistiques suffisantes — est optimal pour trois raisons :
-
-**1. Exhaustivité** — $T(x)$ capture toute l'information de $x$ sur $\theta$. Toute autre fonction $h$ perd de l'information.
-
-**2. Analyticité** — $\mathbb{E}_\theta[T(x)] = \nabla_\eta A(\eta)$, calculable en forme fermée pour toutes les familles exponentielles. C'est ce qui garantit l'analyticité de l'objectif.
-
-**3. Cohérence géométrique** — le couplage opère dans l'espace naturel de la famille, pas dans un espace arbitraire.
-
-Les alternatives courantes et leurs compromis :
-
-| Choix de $h$ | Avantage | Inconvénient |
-|---|---|---|
-| $T(x)$ statistiques suffisantes | exhaustif, analytique | dimension variable selon la famille |
-| $x$ seul (moment brut) | simple, universel | perd l'information sur la variance |
-| $\eta(\theta)$ paramètres naturels | linéaire dans l'espace naturel | moins interprétable cliniquement |
-| $\mathbb{E}[x]$ seul | très simple | ignore toute l'incertitude |
-
-### Couplages inter-familles et structure matricielle
-
-Quand les nœuds $i$ et $j$ appartiennent à des familles différentes, leurs statistiques suffisantes $T_i$ et $T_j$ peuvent avoir des dimensions différentes :
-
-- $T_i \in \mathbb{R}^{d_i}$ — par exemple $d_i = 2$ pour une Gaussienne : $(x, x^2)$
-- $T_j \in \mathbb{R}^{d_j}$ — par exemple $d_j = k$ pour une Categorical : $(\mathbf{1}_{x=1}, \ldots, \mathbf{1}_{x=k})$
-
-Le couplage scalaire $\beta_{ij} \in \mathbb{R}$ ne suffit plus. On introduit une **matrice de couplage** $B_{ij} \in \mathbb{R}^{d_i \times d_j}$ :
-
-$$\psi_{ij}(x_i, x_j) = \exp\left(T_i(x_i)^T \, B_{ij} \, T_j(x_j)\right)$$
-
-Ce qui donne après passage en espérance sous $q$ :
-
-$$\mathbb{E}_q\left[T_i^T B_{ij} T_j\right] = \mathbb{E}_{\theta_i^{\text{post}}}[T_i]^T \, B_{ij} \, \mathbb{E}_{\theta_j^{\text{post}}}[T_j]$$
-
-Chaque entrée $(a, b)$ de $B_{ij}$ contrôle l'interaction entre la $a$-ème statistique de $i$ et la $b$-ème statistique de $j$. Par exemple pour un couplage Gamma ($d=2$) — Categorical ($d=k$) :
-
-$$B_{ij} = \begin{pmatrix} b_{11} & \cdots & b_{1k} \\ b_{21} & \cdots & b_{2k} \end{pmatrix}$$
-
-où $b_{1c}$ couple $\mathbb{E}[\log x_i]$ à la probabilité de classe $c$, et $b_{2c}$ couple $\mathbb{E}[x_i]$ à la même classe. Cela permet par exemple à une sévérité élevée **et** incertaine d'avoir des effets différenciés sur chaque classe de risque.
-
-Le cas scalaire $\beta_{ij} \in \mathbb{R}$ est le cas particulier $d_i = d_j = 1$.
-
----
-
-## Quatre forces en tension
-
-| Terme | Rôle | Effet |
-|---|---|---|
-| Couplages $\beta_{ij}$ | cohérence entre voisins | aligne les $\mathbb{E}[T]$ des nœuds liés |
-| Prior relaxé $\theta_i^{\text{relax}}$ | ancrage épidémiologique + historique | ramène vers $\theta_i^{\text{epidemio}}$ via $\theta_i^{\text{prev}}$ |
-| Observations $\mathcal{O}_i$ | fidélité aux données | met à jour selon les mesures disponibles |
-| Entropie $\mathbb{H}$ | anti-collapse | maintient l'incertitude, évite les distributions dégénérées |
-
----
-
-## Dynamique temporelle
-
-Le prior utilisé à chaque instant $t$ n'est pas l'épidémio brute, mais l'état patient précédent **relaxé** vers l'épidémio :
-
-$$\theta_i^{\text{relax}}(t) = (1 - e^{-\Delta t / \tau_i}) \cdot \theta_i^{\text{epidemio}} + e^{-\Delta t / \tau_i} \cdot \theta_i^{\text{prev}}(t)$$
-
-où $\theta_i^{\text{prev}}(t) = \theta_i^{\text{post}}(t-1)$ — le posterior de l'étape précédente devient le prior non relaxé de l'étape courante.
-
-- $\tau_i$ : constante de temps propre à chaque variable (ex: court pour glycémie, long pour statut fumeur)
-- L'historique patient est encodé dans $\theta_i^{\text{prev}}$ sans stocker de trajectoire explicite
-- Structure de **filtre bayésien hiérarchique** à trois échelles :
-
-| Échelle | Mécanisme | Paramètres |
-|---|---|---|
-| Épidémio | prior populationnel statique | $\theta_i^{\text{epidemio}}$ |
-| Patient | relaxation à $\tau_i$ | $\theta_i^{\text{relax}}(t)$ |
-| Observation | mise à jour instantanée | $\mathcal{O}_i$ |
-
----
-
-## Calibration
-
-**Priors épidémiologiques $\theta_i^{\text{epidemio}}$** — directement depuis la littérature épidémiologique. Simples à justifier cliniquement.
-
-**Couplages $\beta_{ij}$** — calibration en deux étapes.
-
-**Étape 1 — Priors locaux par paire**
-
-Pour chaque arête, on pose des priors gaussiens sur les paramètres de couplage. Un couplage scalaire $b \sim \mathcal{N}(\mu_b, \sigma_b^2)$ introduit 2 degrés de liberté ; une matrice $B_{ij} \in \mathbb{R}^{d_i \times d_j}$ en introduit $2 \cdot d_i \cdot d_j$.
-
-On demande à l'expert autant d'**espérances conditionnelles interprétables** que de degrés de liberté. Exemple sur grippe/température :
-
-- *"Température moyenne chez un patient certainement grippé ?"* → $\mu_b$
-- *"À quel point êtes-vous certain de cette relation ?"* → $\sigma_may
-L'expert répond cliniquement. La traduction en contraintes sur $(\mu_b, \sigma_b)$ est faite en interne. Cette étape est **purement locale** — elle ignore le reste du graphe.
-
-**Étape 2 — Calibration globale par patients virtuels**
-
-Les priors de l'étape 1 régularisent une optimisation MAP sur des patients types construits avec l'expert :
-
-$$\hat{\boldsymbol{\beta}} = \arg\max_{\boldsymbol{\beta}} \left[ \sum_m \log P(\mathbf{x}^{(m)} | \boldsymbol{\beta}) + \log P(\boldsymbol{\beta}) \right]$$
-
-Les patients types sont auditables cliniquement et capturent les interactions globales du graphe que l'étape 1 ignore.
-
-**Couplages variables** — si $\beta_{ij}$ semble dépendre du patient, c'est le signal qu'une variable cachée $z_{ij}$ médiatise le couplage. On l'ajoute au graphe, et $\beta_{ij}$ redevient fixe.
-
----
-
-## Points ouverts
-
-- Choix de la structure du graphe (expert vs. appris)
-- Gestion du MNAR (missing not at random) dans les EHR
-- Validation clinique des $\theta_i^{\text{new}}$ sur des outcomes réels
-- Passage à l'échelle sur des graphes denses
-
-
-## Représentation de l'incertitude sur les nœuds — choix de paramétrisation
-
-Un principe uniforme gouverne le choix de la loi portée par chaque nœud : la distribution doit encoder non seulement la valeur centrale de la variable, mais aussi **l'incertitude sur cette valeur**. C'est cette incertitude qui permet à une observation fiable de dominer mécaniquement un prior faible lors du point fixe — exactement comme un instrument précis ($\sigma_{\text{obs}}^2$ petit) écrase un prior diffus dans le cas Gaussien. Lorsque ce degré de liberté est absent, prior et observation se moyennent à poids égal quelle que soit la fiabilité de la mesure, produisant une dilution systématique. Par conséquent, **les lois à un seul paramètre sont interdites dans le modèle** : Bernoulli, Categorical, et Poisson sont exclues, au profit de leurs conjugués naturels à deux paramètres ou plus.
-
-**Nœuds continus** — la Gaussienne $\mathcal{N}(\mu, \sigma^2)$ est le bon choix natif pour les variables symétriques. Les deux paramètres $(\mu, \sigma^2)$ encodent conjointement la valeur et l'incertitude ; dans l'espace des paramètres naturels, la précision $1/\sigma^2$ joue directement le rôle de pseudo-compte. Un instrument de mesure précis s'encode avec un $\sigma_{\text{obs}}^2$ faible, dont le poids domine mécaniquement le prior sans aucun mécanisme ad hoc. Pour les variables positives — taux, durées, concentrations — la Gamma $(\alpha, \beta)$ bénéficie de la même propriété : $\beta$ joue le rôle de pseudo-compte, et la distribution capture naturellement l'asymétrie de ces grandeurs.
-
-**Nœuds de comptage** — Poisson est interdit. Son conjugué naturel, la **Gamma** $(\alpha, \beta)$, lui est substitué : une observation de $n$ événements sur une fenêtre temporelle $t$ s'encode en $\text{Gamma}(n, t)$, où $t$ joue le rôle de pseudo-compte. Grand $t$ implique grand pseudo-compte et domination du prior — la logique est restaurée.
-
-**Nœuds discrets** — Bernoulli et Categorical sont interdites. Elles sont remplacées par une famille unifiée : la **Dirichlet** $\text{Dir}(\boldsymbol{\alpha})$, dont Beta $(\alpha_1, \alpha_2)$ est le cas particulier $k=2$. Un seul type de nœud discret suffit donc, paramétré par le nombre de classes $k$, qui se spécialise automatiquement en nœud binaire lorsque $k=2$. Le pseudo-compte global $\alpha_0 = \sum_c \alpha_c$ gouverne le poids de l'observation, et la forme du vecteur $\boldsymbol{\alpha}$ encode simultanément la direction et la certitude qualitative du résultat. Cette asymétrie est essentielle : une observation positive et une observation négative d'un même test doivent être encodées avec des vecteurs $\boldsymbol{\alpha}^{\text{obs}}$ distincts, reflétant la sensibilité et la spécificité propres au test — deux quantités généralement différentes qui gouvernent respectivement l'information apportée par chaque type de résultat.
-
-Le tableau suivant résume les familles autorisées :
+**Principe** : chaque nœud doit encoder la valeur centrale **et** l'incertitude sur cette valeur. Les lois à un seul paramètre (Bernoulli, Categorical, Poisson) sont interdites — prior et observation y pèsent à égalité quelle que soit la fiabilité de la mesure.
 
 | Variable | Interdit | Autorisé | Pseudo-compte |
 |---|---|---|---|
@@ -221,4 +67,116 @@ Le tableau suivant résume les familles autorisées :
 | Continue $\mathbb{R}^+$ — biomarqueurs | — | Log-Normale $(\mu, \sigma^2)$ | $1/\sigma^2$ |
 | Continue $\mathbb{R}^+$ — queue lourde | — | Inverse-Gamma $(\alpha, \beta)$ | $\beta$ |
 | Comptage | Poisson | Gamma $(\alpha, \beta)$ | $\beta$ |
-| Discret ($k$ classes) | Bernoulli, Categorical | Dirichlet $(\boldsymbol{\alpha})$ | $\sum_c \alpha_c$ |
+| Discret ($k$ classes) | Bernoulli, Categorical | Dirichlet $\text{Dir}(\boldsymbol{\alpha})$ | $\alpha_0 = \sum_c \alpha_c$ |
+
+Beta$(\alpha_1, \alpha_2)$ est le cas particulier $k=2$ de la Dirichlet.
+
+### Briques analytiques par famille
+
+Pour chaque famille $p_\eta(x) = \exp(\eta^T T(x) - A(\eta) + h(x))$, les quantités utiles pour le point fixe et le jacobien sont :
+
+**Gaussienne** $(\mu, \sigma^2)$
+
+$$\eta = \Bigl(\tfrac{\mu}{\sigma^2},\, -\tfrac{1}{2\sigma^2}\Bigr),\quad T = (x, x^2),\quad \mathbb{E}[T] = (\mu,\, \mu^2+\sigma^2)$$
+$$\Lambda = \begin{pmatrix}\sigma^2 & 2\mu\sigma^2 \\ 2\mu\sigma^2 & 2\sigma^4+4\mu^2\sigma^2\end{pmatrix},\quad \mathbb{H} = \tfrac{1}{2}\log(2\pi e\,\sigma^2)$$
+
+**Gamma** $(\alpha, \beta)$
+
+$$\eta = (\alpha-1,\,-\beta),\quad T = (\log x, x),\quad \mathbb{E}[T] = \bigl(\psi(\alpha),\, \tfrac{\alpha}{\beta}\bigr)$$
+$$\Lambda = \begin{pmatrix}\psi_1(\alpha) & 0 \\ 0 & \alpha/\beta^2\end{pmatrix} \text{ (diagonale)},\quad \mathbb{H} = \alpha - \log\beta + \log\Gamma(\alpha) + (1-\alpha)\psi(\alpha)$$
+
+**Log-Normale** $(\mu, \sigma^2)$ — identique à Gaussienne sur $\log x$ :
+
+$$T = (\log x, \log^2 x),\quad \mathbb{E}[T] = (\mu, \mu^2+\sigma^2),\quad \mathbb{H} = \mu + \tfrac{1}{2}\log(2\pi e\,\sigma^2)$$
+
+**Inverse-Gamma** $(\alpha, \beta)$, $\alpha > 2$
+
+$$\eta = (-\alpha-1,\,-\beta),\quad T = (\log x, 1/x),\quad \Lambda = \begin{pmatrix}\psi_1(\alpha) & 0 \\ 0 & \beta^2/[(\alpha-1)^2(\alpha-2)]\end{pmatrix}$$
+
+**Dirichlet** $\text{Dir}(\boldsymbol{\alpha})$, $k$ classes
+
+$$\eta = \boldsymbol{\alpha} - \mathbf{1},\quad T = (\log x_1,\ldots,\log x_k),\quad \mathbb{E}[T_c] = \psi(\alpha_c) - \psi(\alpha_0)$$
+$$\Lambda = \operatorname{diag}(\psi_1(\boldsymbol{\alpha})) - \psi_1(\alpha_0)\,\mathbf{1}\mathbf{1}^T \quad \text{(rang }k-1\text{, singulière)}$$
+
+$\psi$ : digamma, $\psi_1$ : trigamma. La singularité de $\Lambda$ pour la Dirichlet reflète la contrainte du simplexe : utiliser un pseudo-inverse ou travailler sur les $k-1$ coordonnées libres.
+
+---
+
+## 5. Algorithme d'inférence
+
+### 5.1 Mise à jour d'un nœud
+
+Au lieu de sauter directement sur $\eta_i^*$, on effectue un **pas interpolé** pour éviter les oscillations :
+
+$$\eta_i^{t+1} = (1 - \alpha_i)\,\eta_i^t + \alpha_i\,\eta_i^*\!\left(\eta_{\mathcal{N}(i)}^t\right)$$
+
+La dynamique est contractante :
+
+$$\eta_i^{t+1} - \eta_i^* = (1-\alpha_i)(\eta_i^t - \eta_i^*)$$
+
+### 5.2 Choix de $\alpha_i$
+
+Le jacobien local quantifie l'amplification de perturbation de $j$ vers $i$ :
+
+$$J_{ij} = \frac{\partial \eta_i^*}{\partial \eta_j} = \frac{B_{ij}\,\Lambda_j}{D_i} = \frac{B_{ij}\,\Lambda_j}{1 + |\mathcal{O}_i| + \lambda_S}$$
+
+Le taux de damping adaptatif garantit la contraction :
+
+$$\boxed{\alpha_i = \frac{1}{\max\!\left(1,\;\displaystyle\sum_{j \in \mathcal{N}(i)} \|J_{ij}\|_2\right)}}$$
+
+**Propriétés** :
+
+| Régime | $\sum\|J_{ij}\|_2$ | $\alpha_i$ |
+|---|---|---|
+| Nœud isolé ou observations fortes | $< 1$ | $1$ — saut direct |
+| Couplages modérés | $\sim 1$ | $\sim 0.5$ |
+| Graphe dense / $\beta$ forts | $\gg 1$ | $\ll 1$ — très conservatif |
+
+Les observations ($|\mathcal{O}_i|$) et l'entropie ($\lambda_S$) augmentent $D_i$, contractent $\|J_{ij}\|_2$ et permettent mécaniquement des $\alpha_i$ plus grands — la stabilisation est automatique.
+
+---
+
+## 6. Dynamique temporelle
+
+Le prior utilisé à chaque instant $t$ est l'état patient précédent **relaxé** vers l'épidémio :
+
+$$\theta_i^{\text{relax}}(t) = \bigl(1 - e^{-\Delta t/\tau_i}\bigr)\cdot\theta_i^{\text{epidemio}} + e^{-\Delta t/\tau_i}\cdot\theta_i^{\text{prev}}(t)$$
+
+avec $\theta_i^{\text{prev}}(t) = \theta_i^{\text{post}}(t-1)$.
+
+- $\tau_i$ : constante de temps propre à la variable (court pour glycémie, long pour statut fumeur)  
+- L'historique est encodé dans $\theta_i^{\text{prev}}$ sans trajectoire explicite  
+- Structure de **filtre bayésien hiérarchique** à trois échelles :
+
+| Échelle | Mécanisme | Paramètres |
+|---|---|---|
+| Épidémio | prior populationnel statique | $\theta_i^{\text{epidemio}}$ |
+| Patient | relaxation exponentielle à $\tau_i$ | $\theta_i^{\text{relax}}(t)$ |
+| Observation | mise à jour instantanée | $\mathcal{O}_i$ |
+
+---
+
+## 7. Calibration
+
+**Priors épidémiologiques** $\theta_i^{\text{epidemio}}$ — directement depuis la littérature. Justifiables cliniquement.
+
+**Couplages** $B_{ij}$ — calibration en deux étapes :
+
+**Étape 1 — Priors locaux par paire.** Pour chaque arête, priors gaussiens sur les entrées de $B_{ij}$ ($2 \cdot d_i \cdot d_j$ degrés de liberté). L'expert répond à autant de questions cliniques interprétables (espérances conditionnelles). Étape purement locale.
+
+**Étape 2 — Calibration globale par patients virtuels.** Optimisation MAP sur des patients types construits avec l'expert :
+
+$$\hat{B} = \arg\max_{B} \left[\sum_m \log P(\mathbf{x}^{(m)} \mid B) + \log P(B)\right]$$
+
+Les patients types capturent les interactions globales ignorées par l'étape 1.
+
+**Couplages variables** — si $B_{ij}$ semble dépendre du patient, c'est le signal qu'une variable cachée $z_{ij}$ médiatise la relation. On l'ajoute au graphe ; $B_{ij}$ redevient fixe.
+
+---
+
+## 8. Points ouverts
+
+- Choix de la structure du graphe (expert vs. appris)
+- Gestion du MNAR (*missing not at random*) dans les EHR
+- Validation clinique des posteriors $\theta_i^{\text{post}}$ sur des outcomes réels
+- Passage à l'échelle sur des graphes denses
