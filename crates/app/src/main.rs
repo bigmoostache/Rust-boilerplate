@@ -5,6 +5,8 @@
 //!
 //! If no output path is given, results are written to stdout.
 
+mod display;
+
 use std::io::Write as _;
 
 use anyhow::Context as _;
@@ -19,18 +21,21 @@ USAGE:
     app <COMMAND> [OPTIONS]
 
 COMMANDS:
-    infer    Run inference on a patient graph
+    infer       Run inference on a patient graph
+    calibrate   Compute coupling matrices from calibration statements
 
-INFER OPTIONS:
-    -i, --input <PATH>         Path to a YAML input file (repeatable, merged in order)
-    -o, --output <PATH>        Path to write the output YAML (defaults to stdout)
-    --entropy_scale <FLOAT>    Entropy scaling factor λ (default: 1.0, from YAML if set)
+OPTIONS (both commands):
+    -i, --input <PATH>         Input YAML file (repeatable, merged in order)
     -h, --help                 Show this help message
 
+INFER ONLY:
+    -o, --output <PATH>        Output YAML file (defaults to stdout)
+    --entropy_scale <FLOAT>    Entropy scaling factor λ (default: 1.0)
+
 EXAMPLES:
-    app infer -i graph.yaml                              # single file
-    app infer -i nodes.yaml -i edges.yaml -i patient.yaml  # merged files
-    app infer -i nodes.yaml -i patient.yaml -o result.yaml  # with output file
+    app infer -i graph.yaml
+    app infer -i nodes.yaml -i edges.yaml -i patient.yaml -o result.yaml
+    app calibrate -i nodes.yaml -i calibration.yaml
 ";
     let mut stdout = std::io::stdout().lock();
     let _r = stdout.write_all(msg.as_bytes());
@@ -48,6 +53,42 @@ enum Command {
         /// Entropy scaling factor (overrides YAML if provided).
         entropy_scale: Option<f64>,
     },
+    /// Compute coupling matrices from calibration statements.
+    Calibrate {
+        /// Input YAML paths (merged in order).
+        inputs: Vec<String>,
+    },
+}
+
+/// Collect `-i`/`--input` paths from a slice of args.
+///
+/// Returns `None` if help was requested or an unknown option is found.
+fn collect_inputs(rest: &[String]) -> Option<Vec<String>> {
+    let mut inputs: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < rest.len() {
+        let arg = rest.get(i)?;
+        match arg.as_str() {
+            "-i" | "--input" => {
+                i = i.checked_add(1)?;
+                if let Some(path) = rest.get(i) {
+                    inputs.push(path.clone());
+                }
+            }
+            "-h" | "--help" => {
+                print_usage();
+                return None;
+            }
+            other => {
+                let mut stderr = std::io::stderr().lock();
+                let _r = writeln!(stderr, "unknown option: {other}");
+                print_usage();
+                return None;
+            }
+        }
+        i = i.checked_add(1)?;
+    }
+    Some(inputs)
 }
 
 /// Parse command-line arguments manually.
@@ -114,6 +155,18 @@ fn parse_args() -> Option<Command> {
             output,
             entropy_scale,
         })
+    } else if subcommand == "calibrate" {
+        let rest = args.get(1..).unwrap_or_default();
+        let inputs = collect_inputs(rest)?;
+
+        if inputs.is_empty() {
+            let mut stderr = std::io::stderr().lock();
+            let _r = writeln!(stderr, "error: at least one --input is required");
+            print_usage();
+            return None;
+        }
+
+        Some(Command::Calibrate { inputs })
     } else if subcommand == "-h" || subcommand == "--help" {
         print_usage();
         None
@@ -141,7 +194,75 @@ fn main() -> anyhow::Result<()> {
             output,
             entropy_scale,
         } => run_infer(&inputs, output.as_deref(), entropy_scale),
+        Command::Calibrate { inputs } => run_calibrate(&inputs),
     }
+}
+
+/// Execute the `calibrate` subcommand.
+///
+/// Reads node definitions + calibration statements from the input
+/// YAML files, resolves edge families, solves for coupling matrices,
+/// and prints the results.
+fn run_calibrate(input_paths: &[String]) -> anyhow::Result<()> {
+    // Read all input YAMLs
+    let mut yamls: Vec<String> = Vec::with_capacity(input_paths.len());
+    for path in input_paths {
+        let yaml = std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read input file: {path}"))?;
+        yamls.push(yaml);
+    }
+
+    // Parse as GraphConfig (for node families) — merge multiple files
+    let mut graph_config =
+        app_core::calibration::parse::graph_from_yaml(yamls.first().unwrap_or(&String::new()))
+            .map_err(|e| anyhow::anyhow!("failed to parse first YAML as GraphConfig: {e}"))?;
+
+    for yaml in yamls.iter().skip(1) {
+        if let Ok(other) = app_core::calibration::parse::graph_from_yaml(yaml) {
+            graph_config.merge(other);
+        }
+    }
+
+    // Parse as CalibrationConfig (look for the `calibration:` key)
+    let mut cal_config: Option<app_core::calibration::parse::CalibrationConfig> = None;
+    for yaml in &yamls {
+        if let Ok(cal) = app_core::calibration::parse::calibration_from_yaml(yaml) {
+            cal_config = Some(cal);
+            break;
+        }
+    }
+
+    let cal = cal_config.context("no `calibration:` block found in any input file")?;
+
+    // Resolve edges
+    let resolved = app_core::calibration::parse::resolve_edges(&cal, &graph_config)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let mut stdout = std::io::stdout().lock();
+
+    drop(writeln!(
+        stdout,
+        "Calibrating {} edge(s)…\n",
+        resolved.len()
+    ));
+
+    // Calibrate each edge and print results
+    for edge in &resolved {
+        drop(writeln!(stdout, "── {} ← {} ──", edge.name_a, edge.name_b));
+
+        match app_core::calibration::system::calibrate_edge(edge) {
+            Ok(result) => {
+                display::print_calibrated_edge(&mut stdout, edge, &result);
+            }
+            Err(e) => {
+                drop(writeln!(stdout, "  ERROR: {e}"));
+            }
+        }
+
+        drop(writeln!(stdout));
+    }
+
+    Ok(())
 }
 
 /// Execute the `infer` subcommand.
@@ -263,7 +384,7 @@ fn run_infer(
     let mut obs_rows: Vec<Vec<(String, String, String, String)>> = Vec::new();
 
     for p in &inference_result.posteriors {
-        rows.push(posterior_columns(p));
+        rows.push(display::posterior_columns(p));
         let mut node_obs = Vec::new();
         if let Some(obs_list) = obs_by_node.get(p.name.as_str()) {
             for obs in obs_list {
@@ -272,7 +393,7 @@ fn run_infer(
                     family: obs.eta_obs.to_canonical(),
                     natural_params: obs.eta_obs.eta_vector().as_slice().to_vec(),
                 };
-                node_obs.push(posterior_columns(&obs_posterior));
+                node_obs.push(display::posterior_columns(&obs_posterior));
             }
         }
         obs_rows.push(node_obs);
@@ -315,56 +436,4 @@ fn run_infer(
     }
 
     Ok(())
-}
-
-/// Extract table columns from a node posterior:
-/// `(name, family, canonical_params, interpretable_summary)`.
-fn posterior_columns(
-    p: &app_core::schema::output::NodePosterior,
-) -> (String, String, String, String) {
-    match &p.family {
-        app_core::schema::raw::FamilyDef::Gaussian { mu, sigma2 } => {
-            let std = sigma2.sqrt();
-            (
-                p.name.clone(),
-                "gaussian".to_owned(),
-                format!("mu={mu:.2}  σ²={sigma2:.2}"),
-                format!("{mu:.2} ± {std:.2}"),
-            )
-        }
-        app_core::schema::raw::FamilyDef::Gamma { alpha, beta } => {
-            let mean = alpha / beta;
-            let std = alpha.sqrt() / beta;
-            (
-                p.name.clone(),
-                "gamma".to_owned(),
-                format!("α={alpha:.2}  β={beta:.2}"),
-                format!("mean={mean:.2} ± {std:.2}"),
-            )
-        }
-        app_core::schema::raw::FamilyDef::Beta { alpha, beta } => {
-            let sum = alpha + beta;
-            let mean = alpha / sum;
-            // Var(Beta) = α·β / ((α+β)² · (α+β+1))
-            let denom = sum.powi(2) * (sum + 1.0);
-            let std = (alpha * beta / denom).sqrt();
-            (
-                p.name.clone(),
-                "beta".to_owned(),
-                format!("α={alpha:.2}  β={beta:.2}"),
-                format!("mean={mean:.2} ± {std:.2}"),
-            )
-        }
-        app_core::schema::raw::FamilyDef::Dirichlet { alpha } => {
-            let sum: f64 = alpha.iter().sum();
-            let probs: Vec<String> = alpha.iter().map(|a| format!("{:.2}", a / sum)).collect();
-            let alphas: Vec<String> = alpha.iter().map(|v| format!("{v:.2}")).collect();
-            (
-                p.name.clone(),
-                "dirichlet".to_owned(),
-                format!("α=[{}]", alphas.join(", ")),
-                format!("probs=[{}]", probs.join(", ")),
-            )
-        }
-    }
 }

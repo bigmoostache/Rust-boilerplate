@@ -7,9 +7,7 @@ analytically from clinical statements.
 ## Run
 
 ```bash
-cargo run -p app -- calibrate \
-  -i examples/simple_calibration/nodes.yaml \
-  -i examples/simple_calibration/calibration.yaml
+cargo run -p app -- calibrate -i examples/simple_calibration/nodes.yaml -i examples/simple_calibration/calibration.yaml
 ```
 
 ## Run the tests

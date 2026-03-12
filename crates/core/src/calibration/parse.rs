@@ -228,3 +228,25 @@ pub const fn family_dim(family: &FamilyDef) -> usize {
         FamilyDef::Dirichlet { alpha } => alpha.len(),
     }
 }
+
+// ---------------------------------------------------------------------------
+// High-level parsing from raw YAML strings
+// ---------------------------------------------------------------------------
+
+/// Deserialize a [`CalibrationConfig`] from a YAML string.
+///
+/// # Errors
+///
+/// Returns a `serde_yaml` error message if parsing fails.
+pub fn calibration_from_yaml(yaml: &str) -> Result<CalibrationConfig, String> {
+    serde_yaml::from_str(yaml).map_err(|e| format!("{e}"))
+}
+
+/// Deserialize a [`GraphConfig`] from a YAML string.
+///
+/// # Errors
+///
+/// Returns a `serde_yaml` error message if parsing fails.
+pub fn graph_from_yaml(yaml: &str) -> Result<GraphConfig, String> {
+    serde_yaml::from_str(yaml).map_err(|e| format!("{e}"))
+}
