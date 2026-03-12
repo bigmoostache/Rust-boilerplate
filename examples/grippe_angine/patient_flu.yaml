@@ -11,5 +11,5 @@ observations:
     value: 0.999
 inference:
   max_iter: 5000
-  tolerance: 1.0e-6
+  tolerance: 1.0e-4
   delta_t: 0.0

@@ -11,6 +11,7 @@ use super::convert::{SchemaError, SchemaErrors, parse_coupling, validate_family}
 use super::observation_compat::{
     ValidatedInstrument, check_model_family_compat, resolve_observation, validate_instrument,
 };
+use super::output::ResolvedObservation;
 use super::raw::{EdgeDef, FamilyDef, GraphConfig};
 
 // ---------------------------------------------------------------------------
@@ -30,6 +31,9 @@ pub struct ValidatedConfig {
     pub delta_t: f64,
     /// Entropy scaling factor `λ` (1.0 = standard VI).
     pub entropy_scale: f64,
+    /// Resolved observations preserved for display (instrument name,
+    /// target node, measured value).
+    pub resolved_observations: Vec<ResolvedObservation>,
 }
 
 // ---------------------------------------------------------------------------
@@ -280,6 +284,7 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
 
     // ── Resolve observations via instruments ────────────────────
     let mut obs_map: HashMap<NodeId, Vec<crate::distributions::NaturalParams>> = HashMap::new();
+    let mut resolved_observations: Vec<ResolvedObservation> = Vec::new();
 
     for (idx, raw_obs) in raw.observations.iter().enumerate() {
         let prefix = format!("observations[{idx}]");
@@ -288,6 +293,12 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
         match obs_result {
             Ok(obs) => {
                 if let Some(nid) = node_id {
+                    resolved_observations.push(ResolvedObservation {
+                        instrument: raw_obs.instrument.clone(),
+                        node: nid.clone(),
+                        value: raw_obs.value.clone(),
+                        eta_obs: obs.clone(),
+                    });
                     obs_map.entry(nid).or_default().push(obs);
                 }
             }
@@ -339,5 +350,6 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
         tolerance: inference.tolerance,
         delta_t: inference.delta_t,
         entropy_scale: inference.entropy_scale.unwrap_or(1.0),
+        resolved_observations,
     })
 }

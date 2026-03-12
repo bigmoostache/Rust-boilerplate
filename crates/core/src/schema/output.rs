@@ -6,10 +6,11 @@
 
 use serde::Serialize;
 
+use crate::distributions::NaturalParams;
 use crate::graph::Graph;
 use crate::inference::ConvergenceResult;
 
-use super::raw::FamilyDef;
+use super::raw::{FamilyDef, ObsValue};
 
 // ---------------------------------------------------------------------------
 // Top-level output
@@ -56,6 +57,27 @@ pub struct NodePosterior {
     pub family: FamilyDef,
     /// Raw natural parameters as a flat vector.
     pub natural_params: Vec<f64>,
+}
+
+// ---------------------------------------------------------------------------
+// Resolved observations (for display)
+// ---------------------------------------------------------------------------
+
+/// A resolved observation — instrument name, target node, and value.
+///
+/// Preserved from the raw YAML so the CLI can display observations
+/// alongside their associated node posteriors.
+#[derive(Debug, Clone)]
+pub struct ResolvedObservation {
+    /// Instrument name (e.g. "thermometre").
+    pub instrument: String,
+    /// Target node name.
+    pub node: String,
+    /// The measured value (raw, for display).
+    pub value: ObsValue,
+    /// The conjugate natural parameters `η_obs` produced by the
+    /// instrument model — same family as the target node.
+    pub eta_obs: NaturalParams,
 }
 
 // ---------------------------------------------------------------------------

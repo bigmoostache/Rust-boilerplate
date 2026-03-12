@@ -166,6 +166,9 @@ fn run_infer(
     // CLI flag overrides YAML setting
     let entropy_scale = cli_entropy_scale.unwrap_or(config.entropy_scale);
 
+    // Keep resolved observations for display (before moving config.graph)
+    let resolved_observations = config.resolved_observations;
+
     // Apply temporal relaxation
     let mut graph = config.graph;
     app_core::temporal::relax_graph(&mut graph, config.delta_t);
@@ -244,6 +247,15 @@ fn run_infer(
         );
     }
 
+    // Group resolved observations by node for display
+    let mut obs_by_node: std::collections::HashMap<
+        &str,
+        Vec<&app_core::schema::output::ResolvedObservation>,
+    > = std::collections::HashMap::new();
+    for obs in &resolved_observations {
+        obs_by_node.entry(obs.node.as_str()).or_default().push(obs);
+    }
+
     // Build table rows: (name, family, param1, param2)
     let rows: Vec<(String, String, String, String)> = inference_result
         .posteriors
@@ -267,6 +279,30 @@ fn run_infer(
                 stdout,
                 "  {name:<w_name$}  {family:<w_family$}  {p1:>w_p1$}  {p2}"
             );
+        }
+        // Show observations for this node in purple
+        if let Some(obs_list) = obs_by_node.get(name.as_str()) {
+            for obs in obs_list {
+                let obs_posterior = app_core::schema::output::NodePosterior {
+                    name: obs.instrument.clone(),
+                    family: obs.eta_obs.to_canonical(),
+                    natural_params: obs.eta_obs.eta_vector().as_slice().to_vec(),
+                };
+                let (_, obs_family, obs_p1, obs_p2) = posterior_columns(&obs_posterior);
+                if obs_p2.is_empty() {
+                    let _r = writeln!(
+                        stdout,
+                        "  \x1b[35m{:<w_name$}  {obs_family:<w_family$}  {obs_p1:>w_p1$}\x1b[0m",
+                        obs.instrument,
+                    );
+                } else {
+                    let _r = writeln!(
+                        stdout,
+                        "  \x1b[35m{:<w_name$}  {obs_family:<w_family$}  {obs_p1:>w_p1$}  {obs_p2}\x1b[0m",
+                        obs.instrument,
+                    );
+                }
+            }
         }
     }
 
