@@ -5,3 +5,4 @@
 .env
 # test-global
 # test-project-rules
+__pycache__/debug_inference.cpython-314.pyc

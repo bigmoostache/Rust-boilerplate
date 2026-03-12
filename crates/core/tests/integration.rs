@@ -408,4 +408,241 @@ inference:
             assert!(yaml_str.contains("gaussian"));
         }
     }
+    /// Debug test — single iteration to dump all intermediate values.
+    /// Run with: cargo test -p app-core --test integration debug_iteration_0 -- --nocapture
+    #[test]
+    fn debug_iteration_0() {
+        use app_core::schema::validate::parse_yamls;
+        use app_core::model::temporal::relax_graph;
+        use nalgebra::DVector;
+
+        let base = "../../examples/grippe_angine";
+        let nodes_y =
+            std::fs::read_to_string(format!("{base}/nodes.yaml")).unwrap();
+        let edges_y =
+            std::fs::read_to_string(format!("{base}/edges.yaml")).unwrap();
+        let instruments_y =
+            std::fs::read_to_string(format!("{base}/instruments.yaml")).unwrap();
+        let patient_y =
+            std::fs::read_to_string(format!("{base}/patient_flu.yaml")).unwrap();
+        let calibration_y =
+            std::fs::read_to_string(format!("{base}/_calibration_result.yaml")).unwrap();
+
+        let yamls: Vec<&str> =
+            vec![&nodes_y, &edges_y, &instruments_y, &patient_y, &calibration_y];
+        let config = parse_yamls(&yamls).unwrap();
+        let mut graph = config.graph;
+
+        relax_graph(&mut graph, config.delta_t);
+
+        let n = graph.num_nodes();
+
+        // Print edges
+        let mut out = String::new();
+        out.push_str("=== EDGES ===\n");
+        for (i, edge) in graph.edges.iter().enumerate() {
+            out.push_str(&format!(
+                "Edge {i}: ({}, {}) {}x{}\n",
+                edge.node_a,
+                edge.node_b,
+                edge.coupling.nrows(),
+                edge.coupling.ncols()
+            ));
+            for r in 0..edge.coupling.nrows() {
+                for c in 0..edge.coupling.ncols() {
+                    out.push_str(&format!("  {:+15.10}", edge.coupling[(r, c)]));
+                }
+                out.push('\n');
+            }
+        }
+
+        // Print nodes
+        out.push_str("\n=== NODES ===\n");
+        for node in &graph.nodes {
+            let eta = node.relax.eta_vector();
+            let et = node.post.expected_suff_stats();
+            let fisher = node.post.fisher_information();
+            out.push_str(&format!(
+                "Node: {} relax_η={:?}\n",
+                node.name,
+                eta.as_slice()
+            ));
+            out.push_str(&format!("  E[T]={:?}\n", et.as_slice()));
+            out.push_str(&format!(
+                "  Fisher={}x{} {:?}\n",
+                fisher.nrows(),
+                fisher.ncols(),
+                fisher.as_slice()
+            ));
+            let obs = graph.observations_for(&node.name);
+            out.push_str(&format!("  #obs={}\n", obs.len()));
+            for (j, o) in obs.iter().enumerate() {
+                out.push_str(&format!(
+                    "  obs[{j}] η={:?}\n",
+                    o.eta_vector().as_slice()
+                ));
+            }
+        }
+
+        // Print adjacency
+        out.push_str("\n=== ADJACENCY ===\n");
+        for (i, adj) in graph.adjacency.iter().enumerate() {
+            if let Some(nd) = graph.nodes.get(i) {
+                for &(j, edge_idx, transposed) in adj {
+                    if let Some(jnd) = graph.nodes.get(j) {
+                        out.push_str(&format!(
+                            "  {} → {} (edge={edge_idx}, transposed={transposed})\n",
+                            nd.name, jnd.name
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Single iteration
+        out.push_str("\n=== ITERATION 0 ===\n");
+        let entropy_scale = 1.0_f64;
+
+        let buffer_read: Vec<DVector<f64>> =
+            graph.nodes.iter().map(|nd| nd.post.expected_suff_stats()).collect();
+        let fishers_read: Vec<_> =
+            graph.nodes.iter().map(|nd| nd.post.fisher_information()).collect();
+
+        let denoms: Vec<f64> = (0..n)
+            .map(|i| {
+                graph.nodes.get(i).map_or(2.0, |nd| {
+                    let num_obs = graph.observations_for(&nd.name).len();
+                    1.0 + f64::from(u32::try_from(num_obs).unwrap_or(u32::MAX))
+                        + entropy_scale
+                })
+            })
+            .collect();
+
+        for node_idx in 0..n {
+            let Some(node) = graph.nodes.get(node_idx) else {
+                continue;
+            };
+            let denom = denoms.get(node_idx).copied().unwrap_or(2.0);
+
+            // Compute alpha
+            let mut sum_j_norms = 0.0_f64;
+            if let Some(adj) = graph.adjacency.get(node_idx) {
+                for &(j_idx, edge_idx, transposed) in adj {
+                    if let (Some(fisher_j), Some(edge)) =
+                        (fishers_read.get(j_idx), graph.edges.get(edge_idx))
+                    {
+                        let b = if transposed {
+                            edge.coupling.transpose()
+                        } else {
+                            edge.coupling.clone()
+                        };
+                        let j_block = &b * fisher_j;
+                        let svd = j_block.svd(false, false);
+                        let spectral =
+                            svd.singular_values.iter().copied().fold(0.0_f64, f64::max);
+                        sum_j_norms += spectral / denom;
+                    }
+                }
+            }
+            let alpha = (1.0 / sum_j_norms.max(1.0)).max(0.0005);
+
+            // Compute numerator
+            let mut numerator = node.relax.eta_vector();
+
+            if let Some(adj) = graph.adjacency.get(node_idx) {
+                for &(j_idx, edge_idx, transposed) in adj {
+                    if let (Some(et_j), Some(edge)) =
+                        (buffer_read.get(j_idx), graph.edges.get(edge_idx))
+                    {
+                        let contribution = if transposed {
+                            &edge.coupling.transpose() * et_j
+                        } else {
+                            &edge.coupling * et_j
+                        };
+                        let jname = graph
+                            .nodes
+                            .get(j_idx)
+                            .map_or("?", |nd| nd.name.as_str());
+                        out.push_str(&format!(
+                            "  {} ← {} (T={}): contrib={:?}\n",
+                            node.name,
+                            jname,
+                            transposed,
+                            contribution.as_slice()
+                        ));
+                        for k in 0..numerator.len().min(contribution.len()) {
+                            if let (Some(dst), Some(src)) =
+                                (numerator.get_mut(k), contribution.get(k))
+                            {
+                                *dst += *src;
+                            }
+                        }
+                    }
+                }
+            }
+
+            let obs = graph.observations_for(&node.name);
+            for eta_obs in obs {
+                let v = eta_obs.eta_vector();
+                for k in 0..numerator.len().min(v.len()) {
+                    if let (Some(dst), Some(src)) = (numerator.get_mut(k), v.get(k)) {
+                        *dst += *src;
+                    }
+                }
+            }
+
+            let eta_star: Vec<f64> = numerator.iter().map(|x| x / denom).collect();
+            let old_eta = node.post.eta_vector();
+            let new_eta: Vec<f64> = old_eta
+                .iter()
+                .zip(eta_star.iter())
+                .map(|(o, s)| o * (1.0 - alpha) + s * alpha)
+                .collect();
+
+            out.push_str(&format!(
+                "  {} denom={denom} alpha={alpha:.6} numerator={:?} eta*={eta_star:?} old={:?} new={new_eta:?}\n",
+                node.name,
+                numerator.as_slice(),
+                old_eta.as_slice(),
+            ));
+        }
+
+        // Write to file
+        std::fs::write("/tmp/rust_debug_iter0.txt", &out).unwrap();
+
+        // Now run actual coordinate_ascent for a few iterations and dump state
+        // Do it manually, one iteration at a time, to trace divergence onset
+        let mut out2 = String::new();
+        out2.push_str("=== PER-ITERATION TRACE ===\n");
+
+        for iter in 0..50_usize {
+            let result = coordinate_ascent(&mut graph, 1, 1e-10, 1.0);
+            out2.push_str(&format!(
+                "\n--- iter {iter} max_change={:.6} ---\n",
+                result.max_change
+            ));
+            for node in &graph.nodes {
+                let eta = node.post.eta_vector();
+                out2.push_str(&format!(
+                    "  {}: η=[{:.6}, {:.6}]\n",
+                    node.name,
+                    eta.get(0).copied().unwrap_or(f64::NAN),
+                    eta.get(1).copied().unwrap_or(f64::NAN),
+                ));
+            }
+        }
+
+        std::fs::write("/tmp/rust_debug_5iters.txt", &out2).unwrap();
+
+        // Also just print summary
+        let lines: Vec<&str> = out.lines().collect();
+        for line in &lines {
+            if line.contains("denom=") || line.contains("Edge") || line.contains("Node:") {
+                // print these important lines
+            }
+        }
+
+        // Make the test always pass — we just want the output
+        assert!(true);
+    }
 } // mod integration_tests

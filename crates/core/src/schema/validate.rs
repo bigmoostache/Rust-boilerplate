@@ -15,6 +15,35 @@ use super::output::ResolvedObservation;
 use super::raw::{EdgeDef, FamilyDef, GraphConfig};
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Transpose a coupling matrix stored as `Vec<Vec<f64>>` (row-major).
+///
+/// Turns `rows[r][c]` into `out[c][r]`.  Used when an inline edge
+/// `(A,B)` is matched against a calibration edge `(B,A)` — the matrix
+/// dimensions swap.
+fn transpose_coupling_rows(rows: &[Vec<f64>]) -> Vec<Vec<f64>> {
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    let nrows = rows.len();
+    let ncols = rows.first().map_or(0, Vec::len);
+    (0..ncols)
+        .map(|c| {
+            (0..nrows)
+                .map(|r| {
+                    rows.get(r)
+                        .and_then(|row| row.get(c))
+                        .copied()
+                        .unwrap_or(0.0)
+                })
+                .collect()
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
 // Validated output
 // ---------------------------------------------------------------------------
 
@@ -181,7 +210,20 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
 
         if let Some(existing) = existing {
             if existing.coupling.is_none() {
-                existing.coupling.clone_from(&raw_edge.coupling);
+                // If the match is reversed (existing is (A,B) but raw_edge
+                // is (B,A)), the coupling matrix must be transposed so that
+                // rows correspond to existing.node_a's dimension and columns
+                // to existing.node_b's dimension.
+                let reversed =
+                    existing.node_a == raw_edge.node_b && existing.node_b == raw_edge.node_a;
+                if reversed {
+                    existing.coupling = raw_edge
+                        .coupling
+                        .as_ref()
+                        .map(|rows| transpose_coupling_rows(rows));
+                } else {
+                    existing.coupling.clone_from(&raw_edge.coupling);
+                }
             }
         } else {
             all_edges.push(EdgeDef {
