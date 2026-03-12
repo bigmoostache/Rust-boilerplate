@@ -198,7 +198,36 @@ fn run_infer(
     let n_obs: usize = graph.observations.values().map(Vec::len).sum();
     let _r1 = writeln!(
         stdout,
-        "Computed on {n_nodes} nodes, {n_edges} edges and {n_obs} observations.\n"
+        "Computed on {n_nodes} nodes, {n_edges} edges and {n_obs} observations."
+    );
+
+    // Parameter count by family
+    let mut n_coupling: usize = 0;
+    for edge in &graph.edges {
+        n_coupling =
+            n_coupling.saturating_add(edge.coupling.nrows().saturating_mul(edge.coupling.ncols()));
+    }
+    let mut n_epidemio: usize = 0;
+    let mut n_tau: usize = 0;
+    for node in &graph.nodes {
+        n_epidemio = n_epidemio.saturating_add(node.epidemio.suff_stat_dim());
+        n_tau = n_tau.saturating_add(1);
+    }
+    // Inference config: max_iter, tolerance, entropy_scale, delta_t = 4
+    let n_inference: usize = 4;
+    let n_total = n_coupling
+        .saturating_add(n_epidemio)
+        .saturating_add(n_tau)
+        .saturating_add(n_inference);
+    let _r_params = writeln!(
+        stdout,
+        "\nModel parameters to configure:\n  \
+         coupling (B_ij entries) : {n_coupling:>4}\n  \
+         priors (epidemio η)     : {n_epidemio:>4}\n  \
+         relaxation (τ per node) : {n_tau:>4}\n  \
+         inference config        : {n_inference:>4}\n  \
+         ────────────────────────────────\n  \
+         total                   : {n_total:>4}"
     );
 
     if inference_result.converged {
