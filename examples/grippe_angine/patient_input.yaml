@@ -10,6 +10,12 @@
 #   - Flu → headache + body aches (systemic)
 #   - Tonsillitis → sore throat (localised)
 #   - Patient has NO body aches → less likely flu
+#
+# All binary variables use Beta distributions — the pseudo-count
+# (α + β) encodes uncertainty on the probability p = α/(α+β).
+# Binary observations use proportion values:
+#   0.999 = symptom present (near-certain)
+#   0.001 = symptom absent (near-certain)
 
 nodes:
   # -- Clinical variables (symptoms) --
@@ -22,20 +28,23 @@ nodes:
 
   - name: "headache"
     family:
-      type: bernoulli
-      p: 0.1
+      type: beta
+      alpha: 1.0
+      beta: 9.0
     tau: 3.0
 
   - name: "sore_throat"
     family:
-      type: bernoulli
-      p: 0.05
+      type: beta
+      alpha: 1.0
+      beta: 19.0
     tau: 5.0
 
   - name: "body_aches"
     family:
-      type: bernoulli
-      p: 0.05
+      type: beta
+      alpha: 1.0
+      beta: 19.0
     tau: 3.0
 
   # -- Disease variables --
@@ -43,54 +52,63 @@ nodes:
   # have higher a priori disease probability than the general population.
   - name: "flu"
     family:
-      type: bernoulli
-      p: 0.25
+      type: beta
+      alpha: 2.5
+      beta: 7.5
     tau: 14.0
 
   - name: "tonsillitis"
     family:
-      type: bernoulli
-      p: 0.25
+      type: beta
+      alpha: 2.5
+      beta: 7.5
     tau: 10.0
 
 edges:
-  # Flu → symptoms
+  # Flu → symptoms (2×2 couplings, only top-left entry active)
   - node_a: flu
     node_b: temperature
     coupling:
-      - [0.01, 0.0]
+      - [0.005, 0.0]
+      - [0.0, 0.0]
 
   - node_a: flu
     node_b: headache
     coupling:
-      - [1.5]
+      - [0.15, 0.0]
+      - [0.0, 0.0]
 
   - node_a: flu
     node_b: body_aches
     coupling:
-      - [2.0]
+      - [0.2, 0.0]
+      - [0.0, 0.0]
 
   # Tonsillitis → symptoms
   - node_a: tonsillitis
     node_b: temperature
     coupling:
-      - [0.008, 0.0]
+      - [0.004, 0.0]
+      - [0.0, 0.0]
 
   - node_a: tonsillitis
     node_b: sore_throat
     coupling:
-      - [2.5]
+      - [0.25, 0.0]
+      - [0.0, 0.0]
 
   - node_a: tonsillitis
     node_b: headache
     coupling:
-      - [0.5]
+      - [0.05, 0.0]
+      - [0.0, 0.0]
 
   # Disease competition
   - node_a: flu
     node_b: tonsillitis
     coupling:
-      - [-0.3]
+      - [-0.05, 0.0]
+      - [0.0, 0.0]
 
 instruments:
   - name: thermometre
@@ -102,20 +120,20 @@ instruments:
   - name: questionnaire_cephalee
     node: headache
     model:
-      type: bernoulli_obs
-      weight: 2.0
+      type: beta_obs
+      kappa: 20.0
 
   - name: questionnaire_gorge
     node: sore_throat
     model:
-      type: bernoulli_obs
-      weight: 2.0
+      type: beta_obs
+      kappa: 20.0
 
   - name: questionnaire_courbatures
     node: body_aches
     model:
-      type: bernoulli_obs
-      weight: 2.0
+      type: beta_obs
+      kappa: 20.0
 
 observations:
   # Patient presents with:
@@ -125,15 +143,15 @@ observations:
 
   # - Sore throat: yes
   - instrument: questionnaire_gorge
-    value: true
+    value: 0.999
 
   # - Headache: yes
   - instrument: questionnaire_cephalee
-    value: true
+    value: 0.999
 
   # - Body aches: NO — this is the key differentiator!
   - instrument: questionnaire_courbatures
-    value: false
+    value: 0.001
 
 inference:
   max_iter: 500

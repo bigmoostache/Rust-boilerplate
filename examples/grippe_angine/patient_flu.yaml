@@ -4,6 +4,10 @@
 #
 # High fever, headache, body aches, NO sore throat.
 # Expected: flu >> tonsillitis
+#
+# Binary observations use proportion values:
+#   0.999 = symptom present (near-certain)
+#   0.001 = symptom absent (near-certain)
 
 observations:
   # High fever: 39.5°C
@@ -12,15 +16,15 @@ observations:
 
   # Headache: yes
   - instrument: questionnaire_cephalee
-    value: true
+    value: 0.999
 
   # Sore throat: no
   - instrument: questionnaire_gorge
-    value: false
+    value: 0.001
 
   # Body aches: yes — classic flu symptom
   - instrument: questionnaire_courbatures
-    value: true
+    value: 0.999
 
 inference:
   max_iter: 500

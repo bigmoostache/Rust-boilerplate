@@ -11,6 +11,7 @@ Un graphe de Markov (MRF) où chaque nœud représente une variable clinique, po
 - **Nœuds** : variables cliniques (glycémie, CRP, compliance, diagnostic, classe de risque...)
 - **Arêtes** : couplages entre variables, paramétrés par $\beta_{ij}$
 - **Familles supportées** : Gaussienne, Gamma, Beta, Poisson, Bernoulli, Categorical, Dirichlet
+  - Pour les variables binaires, **utiliser Beta plutôt que Bernoulli** — voir section dédiée ci-dessous
 
 Chaque nœud $i$ porte quatre états successifs :
 
@@ -178,8 +179,7 @@ Pour chaque arête, on pose des priors gaussiens sur les paramètres de couplage
 On demande à l'expert autant d'**espérances conditionnelles interprétables** que de degrés de liberté. Exemple sur grippe/température :
 
 - *"Température moyenne chez un patient certainement grippé ?"* → $\mu_b$
-- *"À quel point êtes-vous certain de cette relation ?"* → $\sigma_b$
-
+- *"À quel point êtes-vous certain de cette relation ?"* → $\sigma_may
 L'expert répond cliniquement. La traduction en contraintes sur $(\mu_b, \sigma_b)$ est faite en interne. Cette étape est **purement locale** — elle ignore le reste du graphe.
 
 **Étape 2 — Calibration globale par patients virtuels**
@@ -200,3 +200,17 @@ Les patients types sont auditables cliniquement et capturent les interactions gl
 - Gestion du MNAR (missing not at random) dans les EHR
 - Validation clinique des $\theta_i^{\text{new}}$ sur des outcomes réels
 - Passage à l'échelle sur des graphes denses
+
+
+## Représentation de l'incertitude sur les nœuds binaires
+
+La distribution de Bernoulli ne porte qu'un seul paramètre — la probabilité $p$ de l'événement — et n'offre aucun moyen d'encoder l'incertitude sur $p$ elle-même. Cela crée un déséquilibre par rapport aux nœuds continus : pour une Gaussienne, un instrument de mesure précis se traduit naturellement par un $\sigma_{\text{obs}}^2$ faible, dont le poids dans les paramètres naturels domine mécaniquement le prior lors du point fixe. Cette logique est absente de Bernoulli, où prior et observation se moyennent sans que la fiabilité intrinsèque de la mesure puisse s'exprimer. La conséquence est une dilution systématique des observations même très fiables — une PCR à $p = 0.999$ reste fortement atténuée par un prior épidémiologique faible, quelle que soit la certitude associée au test.
+
+La solution naturelle est de substituer la loi **Beta** à Bernoulli pour les nœuds binaires : conjuguée de Bernoulli et membre de la famille exponentielle, elle porte deux paramètres $(\alpha, \beta)$ dont la somme $\alpha + \beta$ joue le rôle de pseudo-compte — équivalent direct du $1/\sigma^2$ gaussien. Une observation très certaine encodée avec un grand pseudo-compte domine alors mécaniquement le prior, restaurant la symétrie de traitement entre nœuds binaires et continus.
+
+Ce cadre révèle en outre qu'une observation positive et une observation négative ne sont pas symétriques et ne doivent pas être encodées comme telles. Un test diagnostique est caractérisé par deux quantités distinctes : sa **sensibilité** — probabilité d'un résultat positif sachant la condition présente — et sa **spécificité** — probabilité d'un résultat négatif sachant la condition absente. Ces deux quantités sont généralement différentes, et chacune gouverne l'information apportée par un résultat dans sa direction. Une PCR grippe typique avec sensibilité $0.85$ et spécificité $0.99$ s'encode ainsi :
+
+- **Résultat positif** : $\text{Beta}(850, 150)$ — $\mathbb{E}[p] = 0.85$, pseudo-compte $1000$
+- **Résultat négatif** : $\text{Beta}(10, 990)$ — $\mathbb{E}[p] = 0.01$, pseudo-compte $1000$
+
+Les deux distributions ont le même pseudo-compte — reflétant un volume d'évidence comparable — mais des positions radicalement différentes sur $[0,1]$. Un résultat négatif sur ce test est plus informatif qu'un résultat positif : sa spécificité de $0.99$ contre une sensibilité de $0.85$ signifie qu'il écarte la condition plus fermement qu'un positif ne la confirme. Cette asymétrie se propage naturellement dans le point fixe sans aucun mécanisme ad hoc — c'est la géométrie de la famille Beta qui la prend en charge.

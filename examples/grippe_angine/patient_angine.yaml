@@ -4,6 +4,10 @@
 #
 # Moderate fever, severe sore throat, NO headache, NO body aches.
 # Expected: tonsillitis >> flu
+#
+# Binary observations use proportion values:
+#   0.999 = symptom present (near-certain)
+#   0.001 = symptom absent (near-certain)
 
 observations:
   # Moderate fever: 38.5°C
@@ -12,15 +16,15 @@ observations:
 
   # Headache: no
   - instrument: questionnaire_cephalee
-    value: false
+    value: 0.001
 
   # Sore throat: yes — the dominant symptom
   - instrument: questionnaire_gorge
-    value: true
+    value: 0.999
 
   # Body aches: no
   - instrument: questionnaire_courbatures
-    value: false
+    value: 0.001
 
 inference:
   max_iter: 500

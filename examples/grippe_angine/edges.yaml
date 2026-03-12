@@ -5,11 +5,11 @@
 # in nodes.yaml.
 
 edges:
-  # temperature (d=2) ↔ headache (d=1): 2×1 coupling
+  # temperature (d=2) ↔ headache (d=2): 2×2 coupling
   # Fever and headache are correlated regardless of cause.
   # Small coupling since E[T_gauss] values are large.
   - node_a: temperature
     node_b: headache
     coupling:
-      - [0.005]
-      - [0.0]
+      - [0.005, 0.0]
+      - [0.0, 0.0]

@@ -17,20 +17,23 @@ nodes:
 
   - name: "headache"
     family:
-      type: bernoulli
-      p: 0.1
+      type: beta
+      alpha: 1.0
+      beta: 9.0
     tau: 3.0
 
   - name: "sore_throat"
     family:
-      type: bernoulli
-      p: 0.05
+      type: beta
+      alpha: 1.0
+      beta: 19.0
     tau: 5.0
 
   - name: "body_aches"
     family:
-      type: bernoulli
-      p: 0.05
+      type: beta
+      alpha: 1.0
+      beta: 19.0
     tau: 3.0
 
   # -- Disease variables --
@@ -39,35 +42,52 @@ nodes:
 
   - name: "flu"
     family:
-      type: bernoulli
-      p: 0.25
+      type: beta
+      alpha: 2.5
+      beta: 7.5
     tau: 14.0
     coupled_with:
-      # flu → temperature (1×2): moderate-to-high fever
+      # flu → temperature (2×2): moderate-to-high fever
+      # Small coupling: Beta E[T] ≈ (-3, -0.1) vs Gaussian E[T] ≈ (37, 1370)
       - node: temperature
-        coupling: [[0.01, 0.0]]
-      # flu → headache (1×1): common with flu
+        coupling:
+          - [0.005, 0.0]
+          - [0.0, 0.0]
+      # flu → headache (2×2): common with flu
       - node: headache
-        coupling: [[1.5]]
-      # flu → body_aches (1×1): hallmark symptom
+        coupling:
+          - [0.15, 0.0]
+          - [0.0, 0.0]
+      # flu → body_aches (2×2): hallmark symptom
       - node: body_aches
-        coupling: [[1.0]]
-      # flu ↔ tonsillitis (1×1): soft mutual exclusion
+        coupling:
+          - [0.2, 0.0]
+          - [0.0, 0.0]
+      # flu ↔ tonsillitis (2×2): soft mutual exclusion
       - node: tonsillitis
-        coupling: [[-0.3]]
+        coupling:
+          - [-0.05, 0.0]
+          - [0.0, 0.0]
 
   - name: "tonsillitis"
     family:
-      type: bernoulli
-      p: 0.25
+      type: beta
+      alpha: 2.5
+      beta: 7.5
     tau: 10.0
     coupled_with:
-      # tonsillitis → temperature (1×2): mild-to-moderate fever
+      # tonsillitis → temperature (2×2): mild-to-moderate fever
       - node: temperature
-        coupling: [[0.008, 0.0]]
-      # tonsillitis → sore_throat (1×1): hallmark symptom
+        coupling:
+          - [0.004, 0.0]
+          - [0.0, 0.0]
+      # tonsillitis → sore_throat (2×2): hallmark symptom
       - node: sore_throat
-        coupling: [[2.5]]
-      # tonsillitis → headache (1×1): mild referred pain
+        coupling:
+          - [0.25, 0.0]
+          - [0.0, 0.0]
+      # tonsillitis → headache (2×2): mild referred pain
       - node: headache
-        coupling: [[0.5]]
+        coupling:
+          - [0.05, 0.0]
+          - [0.0, 0.0]
