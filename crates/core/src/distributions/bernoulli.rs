@@ -6,7 +6,7 @@
 
 use nalgebra::{DMatrix, DVector};
 
-use super::exp_family::ExponentialFamily;
+use super::ExponentialFamily;
 
 /// Marker type for the Bernoulli exponential family.
 pub(crate) struct Bernoulli;
@@ -63,7 +63,7 @@ pub(super) fn log_partition(eta1: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
+    use super::super::{ef_cross_entropy as ef_ce, ef_entropy as ef_h};
     use super::*;
 
     /// Reference: Bernoulli(p=0.7) → η₁ = logit(0.7) = ln(7/3).

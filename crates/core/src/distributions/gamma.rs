@@ -6,7 +6,7 @@
 
 use nalgebra::{DMatrix, DVector};
 
-use super::exp_family::ExponentialFamily;
+use super::ExponentialFamily;
 
 /// Marker type for the Gamma exponential family.
 pub(crate) struct GammaDist;
@@ -150,7 +150,7 @@ pub(crate) fn lgamma(x: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
+    use super::super::{ef_cross_entropy as ef_ce, ef_entropy as ef_h};
     use super::*;
 
     /// Reference: Gamma(α=3, β=2) → η₁=2, η₂=−2.

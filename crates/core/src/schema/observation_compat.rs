@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use crate::graph::NodeId;
 use crate::observation::Observation;
 
-use super::diag::SchemaError;
+use super::convert::SchemaError;
 use super::raw::{FamilyDef, InstrumentDef, ModelDef, ObsValue, ObservationDef};
 
 // ---------------------------------------------------------------------------

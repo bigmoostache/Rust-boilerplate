@@ -7,10 +7,12 @@
 //! Validation is strict and exhaustive — all errors are collected
 //! before being reported.  No unknown fields are accepted.
 
-pub mod diag;
+pub mod convert;
 mod observation_compat;
 pub mod output;
 pub mod raw;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_edges_instruments;
 pub mod validate;

@@ -9,7 +9,6 @@ mod bernoulli;
 mod beta;
 mod categorical;
 mod dirichlet;
-pub(crate) mod exp_family;
 pub(crate) mod gamma;
 mod gaussian;
 mod poisson;
@@ -22,12 +21,62 @@ use bernoulli::Bernoulli;
 use beta::BetaDist;
 use categorical::CategoricalDist;
 use dirichlet::DirichletDist;
-use exp_family::{
-    ExponentialFamily as _, cross_entropy as ef_cross_entropy, entropy as ef_entropy,
-};
 use gamma::GammaDist;
 use gaussian::Gaussian;
 use poisson::PoissonDist;
+
+// ---------------------------------------------------------------------------
+// Exponential family trait — generic formulas for entropy, cross-entropy.
+// ---------------------------------------------------------------------------
+
+/// Trait for exponential family distributions.
+///
+/// An exponential family density has the form:
+///
+/// ```text
+/// p(x; η) = h(x) · exp(η · T(x) − A(η))
+/// ```
+///
+/// Implementors provide the three family-specific ingredients;
+/// generic functions [`ef_entropy`] and [`ef_cross_entropy`] derive
+/// the rest.
+pub(crate) trait ExponentialFamily {
+    /// Log-partition function `A(η)`.
+    fn log_partition(eta: &DVector<f64>) -> f64;
+
+    /// Expected sufficient statistics `E_η[T(x)] = ∇A(η)`.
+    fn expected_suff_stats(eta: &DVector<f64>) -> DVector<f64>;
+
+    /// Fisher information matrix `F(η) = ∇²A(η) = Cov_η[T(x)]`.
+    fn fisher_information(eta: &DVector<f64>) -> DMatrix<f64>;
+
+    /// Expected log-base-measure `E_η[ln h(x)]`.
+    ///
+    /// Defaults to `0` — correct for families where `h(x) = 1`.
+    fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
+        0.0
+    }
+}
+
+/// Differential entropy `H(η) = −E_η[ln p_η(x)]`.
+///
+/// ```text
+/// H = −E[ln h(x)] − η · E[T(x)] + A(η)
+/// ```
+fn ef_entropy<F: ExponentialFamily>(eta: &DVector<f64>) -> f64 {
+    -F::expected_log_base_measure(eta) - eta.dot(&F::expected_suff_stats(eta))
+        + F::log_partition(eta)
+}
+
+/// Cross-entropy `E_me[ln p_other(x)]`.
+///
+/// ```text
+/// E_me[ln p_other] = E_me[ln h(x)] + η_other · E_me[T(x)] − A(η_other)
+/// ```
+fn ef_cross_entropy<F: ExponentialFamily>(me: &DVector<f64>, other: &DVector<f64>) -> f64 {
+    F::expected_log_base_measure(me) + other.dot(&F::expected_suff_stats(me))
+        - F::log_partition(other)
+}
 
 /// Natural parameters for the seven supported exponential families.
 ///

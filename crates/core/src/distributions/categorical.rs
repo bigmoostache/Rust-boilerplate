@@ -8,7 +8,7 @@
 
 use nalgebra::{DMatrix, DVector};
 
-use super::exp_family::ExponentialFamily;
+use super::ExponentialFamily;
 
 /// Marker type for the Categorical exponential family.
 pub(crate) struct CategoricalDist;
@@ -80,7 +80,7 @@ pub(super) fn log_partition(eta: &[f64]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
+    use super::super::{ef_cross_entropy as ef_ce, ef_entropy as ef_h};
     use super::*;
 
     /// Reference: Cat(K=3) with p = (0.2, 0.3, 0.5).
