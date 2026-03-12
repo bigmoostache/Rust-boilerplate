@@ -78,7 +78,7 @@ pub struct InlineEdge {
 }
 
 /// Distribution family with canonical parameters.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum FamilyDef {
     /// `type: gaussian`, `mu`, `sigma2`.
