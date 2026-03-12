@@ -32,10 +32,14 @@ INFER ONLY:
     -o, --output <PATH>        Output YAML file (defaults to stdout)
     --entropy_scale <FLOAT>    Entropy scaling factor λ (default: 1.0)
 
+CALIBRATE ONLY:
+    --yaml                     Output as edges YAML (loadable via -i)
+
 EXAMPLES:
     app infer -i graph.yaml
     app infer -i nodes.yaml -i edges.yaml -i patient.yaml -o result.yaml
     app calibrate -i nodes.yaml -i calibration.yaml
+    app calibrate -i nodes.yaml -i calibration.yaml --yaml > edges.yaml
 ";
     let mut stdout = std::io::stdout().lock();
     let _r = stdout.write_all(msg.as_bytes());
@@ -57,14 +61,17 @@ enum Command {
     Calibrate {
         /// Input YAML paths (merged in order).
         inputs: Vec<String>,
+        /// If true, output as YAML (edges file) instead of human-readable.
+        yaml_output: bool,
     },
 }
 
-/// Collect `-i`/`--input` paths from a slice of args.
+/// Collect `-i`/`--input` paths and `--yaml` flag from a slice of args.
 ///
 /// Returns `None` if help was requested or an unknown option is found.
-fn collect_inputs(rest: &[String]) -> Option<Vec<String>> {
+fn collect_calibrate_args(rest: &[String]) -> Option<(Vec<String>, bool)> {
     let mut inputs: Vec<String> = Vec::new();
+    let mut yaml_output = false;
     let mut i = 0;
     while i < rest.len() {
         let arg = rest.get(i)?;
@@ -75,6 +82,7 @@ fn collect_inputs(rest: &[String]) -> Option<Vec<String>> {
                     inputs.push(path.clone());
                 }
             }
+            "--yaml" => yaml_output = true,
             "-h" | "--help" => {
                 print_usage();
                 return None;
@@ -88,7 +96,7 @@ fn collect_inputs(rest: &[String]) -> Option<Vec<String>> {
         }
         i = i.checked_add(1)?;
     }
-    Some(inputs)
+    Some((inputs, yaml_output))
 }
 
 /// Parse command-line arguments manually.
@@ -157,7 +165,7 @@ fn parse_args() -> Option<Command> {
         })
     } else if subcommand == "calibrate" {
         let rest = args.get(1..).unwrap_or_default();
-        let inputs = collect_inputs(rest)?;
+        let (inputs, yaml_output) = collect_calibrate_args(rest)?;
 
         if inputs.is_empty() {
             let mut stderr = std::io::stderr().lock();
@@ -166,7 +174,10 @@ fn parse_args() -> Option<Command> {
             return None;
         }
 
-        Some(Command::Calibrate { inputs })
+        Some(Command::Calibrate {
+            inputs,
+            yaml_output,
+        })
     } else if subcommand == "-h" || subcommand == "--help" {
         print_usage();
         None
@@ -194,7 +205,10 @@ fn main() -> anyhow::Result<()> {
             output,
             entropy_scale,
         } => run_infer(&inputs, output.as_deref(), entropy_scale),
-        Command::Calibrate { inputs } => run_calibrate(&inputs),
+        Command::Calibrate {
+            inputs,
+            yaml_output,
+        } => run_calibrate(&inputs, yaml_output),
     }
 }
 
@@ -203,7 +217,7 @@ fn main() -> anyhow::Result<()> {
 /// Reads node definitions + calibration statements from the input
 /// YAML files, resolves edge families, solves for coupling matrices,
 /// and prints the results.
-fn run_calibrate(input_paths: &[String]) -> anyhow::Result<()> {
+fn run_calibrate(input_paths: &[String], yaml_output: bool) -> anyhow::Result<()> {
     // Read all input YAMLs
     let mut yamls: Vec<String> = Vec::with_capacity(input_paths.len());
     for path in input_paths {
@@ -240,26 +254,37 @@ fn run_calibrate(input_paths: &[String]) -> anyhow::Result<()> {
 
     let mut stdout = std::io::stdout().lock();
 
-    drop(writeln!(
-        stdout,
-        "Calibrating {} edge(s)…\n",
-        resolved.len()
-    ));
-
-    // Calibrate each edge and print results
-    for edge in &resolved {
-        drop(writeln!(stdout, "── {} ← {} ──", edge.name_a, edge.name_b));
-
-        match app_core::calibration::system::calibrate_edge(edge) {
-            Ok(result) => {
-                display::print_calibrated_edge(&mut stdout, edge, &result);
-            }
-            Err(e) => {
-                drop(writeln!(stdout, "  ERROR: {e}"));
+    if yaml_output {
+        // YAML output: edges file that can be loaded via -i
+        drop(writeln!(stdout, "edges:"));
+        for edge in &resolved {
+            match app_core::calibration::system::calibrate_edge(edge) {
+                Ok(result) => {
+                    display::print_calibrated_edge_yaml(&mut stdout, edge, &result);
+                }
+                Err(e) => {
+                    drop(writeln!(stdout, "  # ERROR calibrating {}↔{}: {e}", edge.name_a, edge.name_b));
+                }
             }
         }
+    } else {
+        // Human-readable output
+        drop(writeln!(stdout, "Calibrating {} edge(s)…\n", resolved.len()));
 
-        drop(writeln!(stdout));
+        for edge in &resolved {
+            drop(writeln!(stdout, "── {} ← {} ──", edge.name_a, edge.name_b));
+
+            match app_core::calibration::system::calibrate_edge(edge) {
+                Ok(result) => {
+                    display::print_calibrated_edge(&mut stdout, edge, &result);
+                }
+                Err(e) => {
+                    drop(writeln!(stdout, "  ERROR: {e}"));
+                }
+            }
+
+            drop(writeln!(stdout));
+        }
     }
 
     Ok(())

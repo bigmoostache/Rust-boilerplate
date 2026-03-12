@@ -53,6 +53,28 @@ pub(crate) fn posterior_columns(
     }
 }
 
+/// Print a calibrated edge as YAML `edges:` entry for direct loading.
+pub(crate) fn print_calibrated_edge_yaml(
+    out: &mut impl Write,
+    edge: &app_core::calibration::parse::ResolvedEdge,
+    result: &app_core::calibration::system::CalibratedEdge,
+) {
+    drop(writeln!(out, "  - node_a: {}", edge.name_a));
+    drop(writeln!(out, "    node_b: {}", edge.name_b));
+    drop(writeln!(out, "    coupling:"));
+    for row in 0..result.coupling.nrows() {
+        let vals: Vec<String> = (0..result.coupling.ncols())
+            .map(|col| {
+                format!(
+                    "{}",
+                    result.coupling.get((row, col)).copied().unwrap_or(f64::NAN)
+                )
+            })
+            .collect();
+        drop(writeln!(out, "      - [{}]", vals.join(", ")));
+    }
+}
+
 /// Print a calibrated edge result: matrix + YAML snippet.
 pub(crate) fn print_calibrated_edge(
     out: &mut impl Write,

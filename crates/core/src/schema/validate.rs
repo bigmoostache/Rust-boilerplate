@@ -171,13 +171,25 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
         }
     }
 
-    // Append top-level edges after inline edges.
+    // Append top-level edges, merging coupling into matching inline
+    // edges that have no coupling yet.
     for raw_edge in &raw.edges {
-        all_edges.push(EdgeDef {
-            node_a: raw_edge.node_a.clone(),
-            node_b: raw_edge.node_b.clone(),
-            coupling: raw_edge.coupling.clone(),
+        let existing = all_edges.iter_mut().find(|e| {
+            (e.node_a == raw_edge.node_a && e.node_b == raw_edge.node_b)
+                || (e.node_a == raw_edge.node_b && e.node_b == raw_edge.node_a)
         });
+
+        if let Some(existing) = existing {
+            if existing.coupling.is_none() {
+                existing.coupling.clone_from(&raw_edge.coupling);
+            }
+        } else {
+            all_edges.push(EdgeDef {
+                node_a: raw_edge.node_a.clone(),
+                node_b: raw_edge.node_b.clone(),
+                coupling: raw_edge.coupling.clone(),
+            });
+        }
     }
 
     // ── Validate edges ──────────────────────────────────────────
@@ -202,32 +214,44 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
             });
         }
 
-        match parse_coupling(&raw_edge.coupling, &format!("{prefix}.coupling")) {
-            Ok(coupling) => {
-                if from_exists
-                    && to_exists
-                    && let (Some(&di), Some(&dj)) = (
-                        node_dim.get(raw_edge.node_a.as_str()),
-                        node_dim.get(raw_edge.node_b.as_str()),
-                    )
-                    && (coupling.nrows() != di || coupling.ncols() != dj)
-                {
-                    errors.push(SchemaError {
-                        path: format!("{prefix}.coupling"),
-                        message: format!(
-                            "expected {di}×{dj} matrix, got {}×{}",
-                            coupling.nrows(),
-                            coupling.ncols()
-                        ),
+        if let Some(ref coupling_rows) = raw_edge.coupling {
+            match parse_coupling(coupling_rows, &format!("{prefix}.coupling")) {
+                Ok(coupling) => {
+                    if from_exists
+                        && to_exists
+                        && let (Some(&di), Some(&dj)) = (
+                            node_dim.get(raw_edge.node_a.as_str()),
+                            node_dim.get(raw_edge.node_b.as_str()),
+                        )
+                        && (coupling.nrows() != di || coupling.ncols() != dj)
+                    {
+                        errors.push(SchemaError {
+                            path: format!("{prefix}.coupling"),
+                            message: format!(
+                                "expected {di}×{dj} matrix, got {}×{}",
+                                coupling.nrows(),
+                                coupling.ncols()
+                            ),
+                        });
+                    }
+                    edges.push(Edge {
+                        node_a: raw_edge.node_a.clone(),
+                        node_b: raw_edge.node_b.clone(),
+                        coupling,
                     });
                 }
-                edges.push(Edge {
-                    node_a: raw_edge.node_a.clone(),
-                    node_b: raw_edge.node_b.clone(),
-                    coupling,
-                });
+                Err(mut errs) => errors.append(&mut errs),
             }
-            Err(mut errs) => errors.append(&mut errs),
+        } else {
+            errors.push(SchemaError {
+                path: format!("{prefix}.coupling"),
+                message: format!(
+                    "edge {}↔{} has no coupling matrix \
+                     (provide inline, in a separate -i file, \
+                     or via calibration output)",
+                    raw_edge.node_a, raw_edge.node_b
+                ),
+            });
         }
     }
 

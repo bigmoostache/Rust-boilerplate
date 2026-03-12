@@ -39,15 +39,34 @@ pub struct GraphConfig {
 impl GraphConfig {
     /// Merge another config into this one.
     ///
-    /// - `nodes`, `edges`, `instruments`, and `observations` are **appended**.
+    /// - `nodes`, `instruments`, and `observations` are **appended**.
+    /// - `edges` are merged: if an edge `(node_a, node_b)` exists in
+    ///   both files, the coupling from `other` fills any `None`.
+    ///   New edges from `other` are appended.
     /// - `inference` is **overridden** by `other` if `other` provides it.
     pub fn merge(&mut self, other: Self) {
         self.nodes.extend(other.nodes);
-        self.edges.extend(other.edges);
         self.instruments.extend(other.instruments);
         self.observations.extend(other.observations);
         if other.inference.is_some() {
             self.inference = other.inference;
+        }
+
+        // Merge edges: match by (node_a, node_b) pair.
+        for new_edge in other.edges {
+            let existing = self.edges.iter_mut().find(|e| {
+                (e.node_a == new_edge.node_a && e.node_b == new_edge.node_b)
+                    || (e.node_a == new_edge.node_b && e.node_b == new_edge.node_a)
+            });
+
+            if let Some(existing) = existing {
+                // Fill in missing coupling from the new edge.
+                if existing.coupling.is_none() {
+                    existing.coupling = new_edge.coupling;
+                }
+            } else {
+                self.edges.push(new_edge);
+            }
         }
     }
 }
@@ -74,7 +93,11 @@ pub struct InlineEdge {
     /// The other node's name.
     pub node: String,
     /// Coupling matrix as row-major nested vectors.
-    pub coupling: Vec<Vec<f64>>,
+    ///
+    /// Optional: if omitted, the coupling must be provided by a
+    /// separate calibration output or edges file (merged via `-i`).
+    #[serde(default)]
+    pub coupling: Option<Vec<Vec<f64>>>,
 }
 
 /// Distribution family with canonical parameters.
@@ -197,7 +220,11 @@ pub struct EdgeDef {
     /// Second node name.
     pub node_b: String,
     /// Coupling matrix as row-major nested vectors.
-    pub coupling: Vec<Vec<f64>>,
+    ///
+    /// Optional: if omitted, must be supplied by another `-i` file or
+    /// calibration output before inference.
+    #[serde(default)]
+    pub coupling: Option<Vec<Vec<f64>>>,
 }
 
 /// An observation event — a measured value from an instrument.
