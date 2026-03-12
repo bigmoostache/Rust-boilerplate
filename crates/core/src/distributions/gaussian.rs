@@ -6,6 +6,8 @@
 
 use nalgebra::{DMatrix, DVector};
 
+use crate::constants::NATURAL_PARAM_EPS;
+
 use super::ExponentialFamily;
 
 /// Marker type for the Gaussian exponential family.
@@ -43,6 +45,15 @@ impl ExponentialFamily for Gaussian {
     /// absorbed into `A(η)` (which includes `½ ln(2πσ²)`).
     fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
         0.0
+    }
+
+    /// Clamp `η₂ < −ε` (ensures `σ² > 0`).
+    fn project(eta: &mut DVector<f64>) {
+        if let Some(e2) = eta.get_mut(1)
+            && *e2 >= -NATURAL_PARAM_EPS
+        {
+            *e2 = -NATURAL_PARAM_EPS;
+        }
     }
 }
 

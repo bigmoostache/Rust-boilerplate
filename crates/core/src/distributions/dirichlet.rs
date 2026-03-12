@@ -11,6 +11,8 @@
 
 use nalgebra::{DMatrix, DVector};
 
+use crate::constants::NATURAL_PARAM_EPS;
+
 use super::gamma::{digamma, lgamma, trigamma};
 
 use super::ExponentialFamily;
@@ -51,6 +53,18 @@ impl ExponentialFamily for DirichletDist {
 
     fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
         0.0
+    }
+
+    /// Clamp every `η_k > −1 + ε` (ensures `α_k > 0`).
+    fn project(eta: &mut DVector<f64>) {
+        let floor = -1.0 + NATURAL_PARAM_EPS;
+        for k in 0..eta.len() {
+            if let Some(e) = eta.get_mut(k)
+                && *e < floor
+            {
+                *e = floor;
+            }
+        }
     }
 }
 

@@ -1,31 +1,14 @@
-# Run: cargo run -- infer -i examples/grippe_angine/nodes.yaml -i examples/grippe_angine/edges.yaml -i examples/grippe_angine/instruments.yaml -i examples/grippe_angine/patient_flu.yaml
-#
 # Patient 1: Classic flu presentation
-#
-# High fever, headache, body aches, NO sore throat.
-# Expected: flu >> tonsillitis
-#
-# Binary observations use proportion values:
-#   0.999 = symptom present (near-certain)
-#   0.001 = symptom absent (near-certain)
-
+# Expected posterior: flu >> tonsillitis
 observations:
-  # High fever: 39.5°C
   - instrument: thermometre
     value: 39.5
-
-  # Headache: yes
   - instrument: questionnaire_cephalee
     value: 0.999
-
-  # Sore throat: no
   - instrument: questionnaire_gorge
-    value: 0.001
-
-  # Body aches: yes — classic flu symptom
+    value: 0.001       # sore throat absent — key discriminator
   - instrument: questionnaire_courbatures
     value: 0.999
-
 inference:
   max_iter: 5000
   tolerance: 1.0e-6

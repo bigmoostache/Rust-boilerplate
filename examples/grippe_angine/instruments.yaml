@@ -1,35 +1,29 @@
 # Grippe vs. Angine — instrument definitions
 #
-# Each instrument defines how a latent variable is measured:
-# the target node, the measurement model, and noise parameters.
+# kappa interpretation:
+#   kappa=100 : quasi-certain (PCR, lab test)
+#   kappa=50  : reliable clinical instrument
+#   kappa=20  : moderate (patient self-report, examined)
+#   kappa=5   : weak signal
 #
-# Observations reference instruments by name and provide only
-# the measured value.
-#
-# Binary symptoms use Beta-conjugate instruments (beta_obs).
-# kappa = pseudo-count of the observation:
-#   - kappa=100 → very reliable test (like a PCR)
-#   - kappa=10  → moderately reliable (clinical exam)
-#   - kappa=2   → weak signal (patient self-report)
+# For Beta nodes, the observation η_obs is:
+#   η1_obs = kappa × value - 1
+#   η2_obs = kappa × (1 - value) - 1
+# so kappa is the effective pseudo-count added.
 
 instruments:
-  # -- Temperature measurement --
+
   - name: thermometre
     node: temperature
     model:
       type: gaussian_noise
-      noise_var: 0.04
-
-  # -- Symptom questionnaire instruments --
-  # Each binary symptom uses a Beta-conjugate instrument.
-  # kappa controls the pseudo-count (reliability) of the observation.
-  # Higher kappa → more weight relative to prior.
+      noise_var: 0.04   # σ=0.2°C — typical clinical thermometer
 
   - name: questionnaire_cephalee
     node: headache
     model:
       type: beta_obs
-      kappa: 50.0
+      kappa: 50.0       # reliable symptom report
 
   - name: questionnaire_gorge
     node: sore_throat

@@ -1,15 +1,16 @@
-# Grippe vs. Angine — shared symptom correlations
+# Grippe vs. Angine — symptom↔symptom edges
 #
-# Only symptom↔symptom edges go here.
-# Disease→symptom edges are declared inline on the disease nodes
-# in nodes.yaml.
+# NOTE: disease↔symptom edges are declared in nodes.yaml.
+# Only symptom↔symptom co-occurrence edges go here.
+#
+# temperature↔headache: fever and headache co-occur regardless
+# of cause. Coupling is small because E[x] for temperature is
+# large (~37), so even b_11=0.005 produces a meaningful contribution.
+# Do NOT duplicate edges already declared via coupled_with.
 
 edges:
-  # temperature (d=2) ↔ headache (d=2): 2×2 coupling
-  # Fever and headache are correlated regardless of cause.
-  # Small coupling since E[T_gauss] values are large.
   - node_a: temperature
     node_b: headache
     coupling:
       - [0.005, 0.0]
-      - [0.0, 0.0]
+      - [0.0,   0.0]

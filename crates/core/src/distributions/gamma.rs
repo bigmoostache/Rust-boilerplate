@@ -6,7 +6,7 @@
 
 use nalgebra::{DMatrix, DVector};
 
-use crate::constants::{DIGAMMA_ASYM, TRIGAMMA_ASYM};
+use crate::constants::{DIGAMMA_ASYM, NATURAL_PARAM_EPS, TRIGAMMA_ASYM};
 
 use super::ExponentialFamily;
 
@@ -42,6 +42,20 @@ impl ExponentialFamily for GammaDist {
 
     fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
         0.0
+    }
+
+    /// Clamp `η₁ > −1 + ε` (ensures `α > 0`) and `η₂ < −ε` (ensures `β > 0`).
+    fn project(eta: &mut DVector<f64>) {
+        if let Some(e1) = eta.get_mut(0)
+            && *e1 <= -1.0 + NATURAL_PARAM_EPS
+        {
+            *e1 = -1.0 + NATURAL_PARAM_EPS;
+        }
+        if let Some(e2) = eta.get_mut(1)
+            && *e2 >= -NATURAL_PARAM_EPS
+        {
+            *e2 = -NATURAL_PARAM_EPS;
+        }
     }
 }
 

@@ -42,6 +42,14 @@ pub(crate) trait ExponentialFamily {
     /// Fisher information matrix `F(η) = ∇²A(η) = Cov_η[T(x)]`.
     fn fisher_information(eta: &DVector<f64>) -> DMatrix<f64>;
 
+    /// Project `η` onto the valid domain for this family (in place).
+    ///
+    /// After a damped update, natural parameters may leave the valid
+    /// domain (e.g. Gaussian η₂ ≥ 0, Gamma η₁ ≤ −1).  This clamps
+    /// each component to a small margin inside the boundary, using
+    /// [`NATURAL_PARAM_EPS`](crate::constants::NATURAL_PARAM_EPS).
+    fn project(eta: &mut DVector<f64>);
+
     /// Expected log-base-measure `E_η[ln h(x)]`.
     ///
     /// Defaults to `0` — correct for families where `h(x) = 1`.
@@ -265,9 +273,18 @@ impl NaturalParams {
     /// Build `NaturalParams` from a natural parameter vector and a
     /// reference that determines the family and dimensions.
     ///
+    /// The vector is projected onto the valid domain before construction.
+    ///
     /// Returns `None` if `eta` has the wrong length for the family.
     #[must_use]
     pub fn from_eta_vector(eta: &DVector<f64>, reference: &Self) -> Option<Self> {
+        let mut eta = eta.clone();
+        // Project onto the valid domain for this family.
+        match reference {
+            Self::Gaussian { .. } => Gaussian::project(&mut eta),
+            Self::Gamma { .. } => GammaDist::project(&mut eta),
+            Self::Dirichlet { .. } => DirichletDist::project(&mut eta),
+        }
         let s = eta.as_slice();
         match reference {
             Self::Gaussian { .. } => {

@@ -1,90 +1,110 @@
 # Grippe vs. Angine — node definitions
 #
-# CALIBRATION NOTES:
+# CALIBRATION — consultation hivernale généraliste:
+#   flu prior    : mean=0.15, strength=20 → α=3.0,  β=17.0
+#   tonsillitis  : mean=0.10, strength=20 → α=2.0,  β=18.0
 #
-# Symptom priors are weak (strength ≈ 10–20) — a single observation
-# (κ=20) dominates.
+# Strength=20 chosen so that κ=50 observations dominate cleanly
+# (obs weight ≈ 50/70 = 71%) while prior resists oscillation.
 #
-# Disease priors use moderate strength (α+β = 10) to resist
-# oscillation in the undirected MRF feedback loops, while still
-# being movable by strong symptom evidence via coupling.
+# Beta symptom priors: weak (strength≈10), reflecting high
+# uncertainty before observation.
 #
-# Coupling values in 0.15–0.25 for Beta↔Beta, ~0.005 for
-# Beta↔Gaussian (temperature).
+# Coupling matrices are 2×2 for Beta↔Beta, 2×2 for Beta↔Gaussian.
+# Only b_11 (coupling on first sufficient stat) is non-zero:
+#   Beta:     T = (log x, log(1-x)) — b_11 couples E[log x]
+#   Gaussian: T = (x, x²)           — b_11 couples E[x]
+# This is a deliberate simplification; b_22 can be activated later.
 
 nodes:
-  # ── Symptom nodes ──────────────────────────────────────────────
 
-  - name: "temperature"
+# ── Symptom nodes ──────────────────────────────────────────────
+
+  - name: temperature
     family:
       type: gaussian
-      mu: 37.0        # normal body temperature
-      sigma2: 0.25    # prior σ = 0.5°C
+      mu: 37.0        # population mean °C
+      sigma2: 0.25    # σ=0.5°C — reflects natural variability
     tau: 7.0
 
-  - name: "headache"
+  - name: headache
     family:
       type: beta
-      alpha: 1.0
-      beta: 9.0        # mean=0.10, strength=10
+      alpha: 1.5
+      beta: 13.5      # mean=0.10, strength=15
     tau: 3.0
 
-  - name: "sore_throat"
+  - name: sore_throat
     family:
       type: beta
       alpha: 1.0
-      beta: 19.0       # mean=0.05, strength=20
+      beta: 19.0      # mean=0.05, strength=20 — rare baseline
     tau: 5.0
 
-  - name: "body_aches"
+  - name: body_aches
     family:
       type: beta
       alpha: 1.0
-      beta: 19.0       # mean=0.05, strength=20
+      beta: 19.0      # mean=0.05, strength=20 — rare baseline
     tau: 3.0
 
-  # ── Disease nodes ──────────────────────────────────────────────
+# ── Disease nodes ──────────────────────────────────────────────
 
-  - name: "flu"
+  - name: flu
     family:
       type: beta
-      alpha: 2.5       # mean=0.25, strength=10
-      beta: 7.5        # moderate strength resists oscillation
+      alpha: 6.0      # mean=0.15, strength=20
+      beta: 34.0
     tau: 14.0
     coupled_with:
+      # temperature: b_11 calibrated so 39.5°C shifts flu by ~+0.08
+      # E[T_gauss] ≈ (37, 1370) at prior; b_11 × 37 ≈ 0.22 contribution
       - node: temperature
         coupling:
-          - [0.005, 0.0]
-          - [0.0, 0.0]
+          - [0.1, 0.0]
+          - [0.0,   0.0]
+
+      # headache: strong flu marker
+      # b_11 couples E[log x_flu] ↔ E[log x_headache]
       - node: headache
         coupling:
-          - [0.25, 0.0]
-          - [0.0, 0.0]
+          - [8.0, 0.0]
+          - [0.0,  8.0]
+
+      # body_aches: pathognomonic of flu
       - node: body_aches
         coupling:
-          - [0.25, 0.0]
-          - [0.0, 0.0]
+          - [8.0, 0.0]
+          - [0.0,  8.0]
+
+      # flu↔tonsillitis: competitive, one presence reduces the other
+      # Asymmetric: flu is more exclusive of tonsillitis than reverse
       - node: tonsillitis
         coupling:
-          - [-0.10, 0.0]
-          - [0.0, 0.0]
+          - [-2.0, 0.0]
+          - [0.0,   0.0]
 
-  - name: "tonsillitis"
+  - name: tonsillitis
     family:
       type: beta
-      alpha: 2.5       # mean=0.25, strength=10
-      beta: 7.5        # moderate strength resists oscillation
+      alpha: 2.0      # mean=0.10, strength=20
+      beta: 18.0
     tau: 10.0
     coupled_with:
+      # temperature: angine donne moins de fièvre que grippe
       - node: temperature
         coupling:
           - [0.004, 0.0]
-          - [0.0, 0.0]
+          - [0.0,   0.0]
+
+      # sore_throat: pathognomonic of tonsillitis
       - node: sore_throat
         coupling:
-          - [0.25, 0.0]
-          - [0.0, 0.0]
+          - [0.40, 0.0]
+          - [0.0,  0.0]
+
+      # headache: weaker association than flu
       - node: headache
         coupling:
-          - [0.10, 0.0]
-          - [0.0, 0.0]
+          - [0.12, 0.0]
+          - [0.0,  0.0]
