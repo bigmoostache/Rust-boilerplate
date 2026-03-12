@@ -171,10 +171,10 @@ fn run_infer(
 
     // Apply temporal relaxation
     let mut graph = config.graph;
-    app_core::temporal::relax_graph(&mut graph, config.delta_t);
+    app_core::model::temporal::relax_graph(&mut graph, config.delta_t);
 
     // Run inference
-    let result = app_core::inference::coordinate_ascent(
+    let result = app_core::model::inference::coordinate_ascent(
         &mut graph,
         config.max_iter,
         config.tolerance,

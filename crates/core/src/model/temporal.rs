@@ -14,7 +14,7 @@
 //! posterior.  When `Δt → 0` we keep the previous posterior;
 //! when `Δt → ∞` we revert to the population prior.
 
-use crate::graph::{Graph, Node};
+use super::graph::{Graph, Node};
 
 /// Compute the relaxed prior for a single node.
 ///

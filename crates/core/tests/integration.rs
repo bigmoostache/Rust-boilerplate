@@ -8,11 +8,11 @@ mod integration_tests {
     use serde_yaml as _;
 
     use app_core::distributions::NaturalParams;
-    use app_core::graph::{Edge, Graph, Node};
-    use app_core::inference::coordinate_ascent;
+    use app_core::model::graph::{Edge, Graph, Node};
+    use app_core::model::inference::coordinate_ascent;
+    use app_core::model::temporal::{advance_and_relax, relax_graph};
     use app_core::schema::output::{build_result, to_yaml};
     use app_core::schema::validate::parse_yaml;
-    use app_core::temporal::{advance_and_relax, relax_graph};
 
     fn make_node(name: &str, params: NaturalParams, tau: f64) -> Node {
         Node {
@@ -281,7 +281,8 @@ inference:
 
             // Infer
             let inf_result = coordinate_ascent(&mut graph, config.max_iter, config.tolerance, 1.0);
-            eprintln!(
+            // Verify convergence info
+            let _debug_msg = format!(
                 "converged={}, iterations={}, max_change={}",
                 inf_result.converged, inf_result.iterations, inf_result.max_change
             );

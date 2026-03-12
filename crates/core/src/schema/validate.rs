@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::graph::{Edge, Graph, Node, NodeId};
+use crate::model::graph::{Edge, Graph, Node, NodeId};
 
 use super::convert::{SchemaError, SchemaErrors, parse_coupling, validate_family};
 use super::observation_compat::{

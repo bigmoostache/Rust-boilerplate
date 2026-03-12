@@ -6,7 +6,7 @@
 
 use nalgebra::{DMatrix, DVector};
 
-use crate::constants::{DIGAMMA_ASYM, NATURAL_PARAM_EPS, TRIGAMMA_ASYM};
+use crate::model::constants::{DIGAMMA_ASYM, NATURAL_PARAM_EPS, TRIGAMMA_ASYM};
 
 use super::ExponentialFamily;
 

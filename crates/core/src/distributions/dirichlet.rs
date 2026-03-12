@@ -11,7 +11,7 @@
 
 use nalgebra::{DMatrix, DVector};
 
-use crate::constants::NATURAL_PARAM_EPS;
+use crate::model::constants::NATURAL_PARAM_EPS;
 
 use super::gamma::{digamma, lgamma, trigamma};
 

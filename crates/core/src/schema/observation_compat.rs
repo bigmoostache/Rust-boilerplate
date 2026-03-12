@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 
 use crate::distributions::NaturalParams;
-use crate::graph::NodeId;
+use crate::model::graph::NodeId;
 
 use super::convert::SchemaError;
 use super::raw::{FamilyDef, InstrumentDef, ModelDef, ObsValue, ObservationDef};

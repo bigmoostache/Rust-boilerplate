@@ -7,8 +7,8 @@
 use serde::Serialize;
 
 use crate::distributions::NaturalParams;
-use crate::graph::Graph;
-use crate::inference::ConvergenceResult;
+use crate::model::graph::Graph;
+use crate::model::inference::ConvergenceResult;
 
 use super::raw::{FamilyDef, ObsValue};
 

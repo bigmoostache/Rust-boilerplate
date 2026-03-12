@@ -14,7 +14,7 @@
 //!
 //! All terms are **fully analytical** for exponential families.
 
-use crate::graph::Graph;
+use super::graph::Graph;
 
 /// Detailed breakdown of the variational score into its four components.
 #[derive(Debug, Clone, Copy)]
@@ -117,7 +117,7 @@ mod tests {
     use nalgebra::DMatrix;
 
     use crate::distributions::NaturalParams;
-    use crate::graph::{Edge, Graph, Node};
+    use crate::model::graph::{Edge, Graph, Node};
 
     use super::Score as _;
 

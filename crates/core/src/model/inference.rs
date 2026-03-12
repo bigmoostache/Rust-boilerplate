@@ -28,10 +28,10 @@
 
 use nalgebra::{DMatrix, DVector};
 
-use crate::constants::MIN_ALPHA;
+use super::constants::MIN_ALPHA;
+use super::graph::Graph;
+use super::score::{Breakdown, Score as _};
 use crate::distributions::NaturalParams;
-use crate::graph::Graph;
-use crate::score::{Breakdown, Score as _};
 
 /// Result of the fixed-point inference.
 #[derive(Debug, Clone)]
@@ -259,7 +259,7 @@ mod tests {
     use nalgebra::DMatrix;
 
     use crate::distributions::NaturalParams;
-    use crate::graph::{Edge, Graph, Node};
+    use crate::model::graph::{Edge, Graph, Node};
 
     use super::coordinate_ascent;
 

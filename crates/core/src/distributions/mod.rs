@@ -47,7 +47,7 @@ pub(crate) trait ExponentialFamily {
     /// After a damped update, natural parameters may leave the valid
     /// domain (e.g. Gaussian η₂ ≥ 0, Gamma η₁ ≤ −1).  This clamps
     /// each component to a small margin inside the boundary, using
-    /// [`NATURAL_PARAM_EPS`](crate::constants::NATURAL_PARAM_EPS).
+    /// [`NATURAL_PARAM_EPS`](crate::model::constants::NATURAL_PARAM_EPS).
     fn project(eta: &mut DVector<f64>);
 
     /// Expected log-base-measure `E_η[ln h(x)]`.
