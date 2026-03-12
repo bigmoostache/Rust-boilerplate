@@ -187,8 +187,8 @@ instruments:
   - name: symptom_check
     node: has_flu
     model:
-      type: noisy_channel
-      epsilon: 0.1
+      type: bernoulli_obs
+      weight: 2.0
 observations:
   - instrument: bp_cuff
     value: 145.0

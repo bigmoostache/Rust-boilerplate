@@ -102,20 +102,20 @@ instruments:
   - name: questionnaire_cephalee
     node: headache
     model:
-      type: noisy_channel
-      epsilon: 0.05
+      type: bernoulli_obs
+      weight: 2.0
 
   - name: questionnaire_gorge
     node: sore_throat
     model:
-      type: noisy_channel
-      epsilon: 0.05
+      type: bernoulli_obs
+      weight: 2.0
 
   - name: questionnaire_courbatures
     node: body_aches
     model:
-      type: noisy_channel
-      epsilon: 0.05
+      type: bernoulli_obs
+      weight: 2.0
 
 observations:
   # Patient presents with:

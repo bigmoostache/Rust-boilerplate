@@ -24,18 +24,18 @@ pub struct InferenceResult {
     pub iterations: usize,
     /// Maximum parameter change in the final iteration.
     pub max_change: f64,
-    /// ELBO breakdown at convergence.
-    pub elbo: ElboBreakdownYaml,
-    /// ELBO value at the end of each iteration.
-    pub elbo_history: Vec<f64>,
+    /// Score breakdown at convergence.
+    pub score: ScoreBreakdownYaml,
+    /// Score value at the end of each iteration.
+    pub score_history: Vec<f64>,
     /// Posterior state for each node.
     pub posteriors: Vec<NodePosterior>,
 }
 
-/// ELBO breakdown in the output.
+/// Score breakdown in the output.
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct ElboBreakdownYaml {
-    /// Total ELBO = coupling + prior + observation + entropy.
+pub struct ScoreBreakdownYaml {
+    /// Total score = coupling + prior + observation + entropy.
     pub total: f64,
     /// Coupling energy term.
     pub coupling: f64,
@@ -79,14 +79,14 @@ pub fn build_result(graph: &Graph, result: &ConvergenceResult) -> InferenceResul
         converged: result.converged,
         iterations: result.iterations,
         max_change: result.max_change,
-        elbo: ElboBreakdownYaml {
-            total: result.elbo.total(),
-            coupling: result.elbo.coupling,
-            prior: result.elbo.prior,
-            observation: result.elbo.observation,
-            entropy: result.elbo.entropy,
+        score: ScoreBreakdownYaml {
+            total: result.score.total(),
+            coupling: result.score.coupling,
+            prior: result.score.prior,
+            observation: result.score.observation,
+            entropy: result.score.entropy,
         },
-        elbo_history: result.elbo_history.clone(),
+        score_history: result.score_history.clone(),
         posteriors,
     }
 }

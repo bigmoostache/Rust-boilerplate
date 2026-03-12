@@ -1,17 +1,17 @@
 //! Instrument validation, model–family compatibility, and observation
 //! resolution.
 //!
-//! Instruments define *how* a latent variable is measured (noise model +
-//! parameters).  Observations reference an instrument and carry only
-//! the measured value.  This module validates instruments, checks that
-//! their measurement model is compatible with the target node's
-//! distribution family, and resolves `(instrument, value)` pairs into
-//! concrete [`Observation`] values.
+//! Instruments define *how* a latent variable is measured (conjugate
+//! model + precision parameters).  Observations reference an instrument
+//! and carry only the measured value.  This module validates
+//! instruments, checks that their model is compatible with the target
+//! node's distribution family, and resolves `(instrument, value)` pairs
+//! into concrete `NaturalParams` (`η_obs`) values.
 
 use std::collections::HashMap;
 
+use crate::distributions::NaturalParams;
 use crate::graph::NodeId;
-use crate::observation::Observation;
 
 use super::convert::SchemaError;
 use super::raw::{FamilyDef, InstrumentDef, ModelDef, ObsValue, ObservationDef};
@@ -54,24 +54,23 @@ pub(super) fn validate_instrument(
                 });
             }
         }
-        ModelDef::NoisyChannel { epsilon } => {
-            if *epsilon < 0.0 || *epsilon >= 0.5 {
+        ModelDef::BernoulliObs { weight } | ModelDef::CategoricalObs { weight } => {
+            if *weight <= 0.0 {
                 errors.push(SchemaError {
-                    path: format!("{path}.model.epsilon"),
-                    message: format!("epsilon must be in [0, 0.5), got {epsilon}"),
+                    path: format!("{path}.model.weight"),
+                    message: format!("weight must be > 0, got {weight}"),
                 });
             }
         }
-        ModelDef::PoissonCount => {} // no parameters to validate
-        ModelDef::NoisyCategorical { epsilon } => {
-            if *epsilon < 0.0 || *epsilon >= 1.0 {
+        ModelDef::PoissonObs { exposure } => {
+            if *exposure <= 0.0 {
                 errors.push(SchemaError {
-                    path: format!("{path}.model.epsilon"),
-                    message: format!("epsilon must be in [0, 1), got {epsilon}"),
+                    path: format!("{path}.model.exposure"),
+                    message: format!("exposure must be > 0, got {exposure}"),
                 });
             }
         }
-        ModelDef::BetaConcentration { kappa } | ModelDef::DirichletConcentration { kappa } => {
+        ModelDef::BetaObs { kappa } | ModelDef::DirichletObs { kappa } => {
             if *kappa <= 0.0 {
                 errors.push(SchemaError {
                     path: format!("{path}.model.kappa"),
@@ -79,7 +78,7 @@ pub(super) fn validate_instrument(
                 });
             }
         }
-        ModelDef::GammaRate { shape } => {
+        ModelDef::GammaObs { shape } => {
             if *shape <= 0.0 {
                 errors.push(SchemaError {
                     path: format!("{path}.model.shape"),
@@ -110,18 +109,12 @@ pub(super) fn check_model_family_compat(
     let compatible = matches!(
         (model, family),
         (ModelDef::GaussianNoise { .. }, FamilyDef::Gaussian { .. })
-            | (ModelDef::NoisyChannel { .. }, FamilyDef::Bernoulli { .. })
-            | (ModelDef::PoissonCount, FamilyDef::Poisson { .. })
-            | (
-                ModelDef::NoisyCategorical { .. },
-                FamilyDef::Categorical { .. }
-            )
-            | (ModelDef::BetaConcentration { .. }, FamilyDef::Beta { .. })
-            | (ModelDef::GammaRate { .. }, FamilyDef::Gamma { .. })
-            | (
-                ModelDef::DirichletConcentration { .. },
-                FamilyDef::Dirichlet { .. }
-            )
+            | (ModelDef::BernoulliObs { .. }, FamilyDef::Bernoulli { .. })
+            | (ModelDef::PoissonObs { .. }, FamilyDef::Poisson { .. })
+            | (ModelDef::CategoricalObs { .. }, FamilyDef::Categorical { .. })
+            | (ModelDef::BetaObs { .. }, FamilyDef::Beta { .. })
+            | (ModelDef::GammaObs { .. }, FamilyDef::Gamma { .. })
+            | (ModelDef::DirichletObs { .. }, FamilyDef::Dirichlet { .. })
     );
 
     if compatible {
@@ -129,12 +122,12 @@ pub(super) fn check_model_family_compat(
     } else {
         let model_type = match model {
             ModelDef::GaussianNoise { .. } => "gaussian_noise",
-            ModelDef::NoisyChannel { .. } => "noisy_channel",
-            ModelDef::PoissonCount => "poisson_count",
-            ModelDef::NoisyCategorical { .. } => "noisy_categorical",
-            ModelDef::BetaConcentration { .. } => "beta_concentration",
-            ModelDef::GammaRate { .. } => "gamma_rate",
-            ModelDef::DirichletConcentration { .. } => "dirichlet_concentration",
+            ModelDef::BernoulliObs { .. } => "bernoulli_obs",
+            ModelDef::PoissonObs { .. } => "poisson_obs",
+            ModelDef::CategoricalObs { .. } => "categorical_obs",
+            ModelDef::BetaObs { .. } => "beta_obs",
+            ModelDef::GammaObs { .. } => "gamma_obs",
+            ModelDef::DirichletObs { .. } => "dirichlet_obs",
         };
         let fam_type = match family {
             FamilyDef::Gaussian { .. } => "gaussian",
@@ -155,18 +148,18 @@ pub(super) fn check_model_family_compat(
 }
 
 // ---------------------------------------------------------------------------
-// Observation resolution
+// Observation resolution → NaturalParams
 // ---------------------------------------------------------------------------
 
 /// Resolve a raw observation (instrument name + value) into a concrete
-/// [`Observation`] using the validated instrument map.
+/// `NaturalParams` (`η_obs`) using the validated instrument map.
 ///
-/// Returns `(node_id, Result<Observation, errors>)`.
+/// Returns `(node_id, Result<NaturalParams, errors>)`.
 pub(super) fn resolve_observation(
     raw: &ObservationDef,
     instruments: &HashMap<String, ValidatedInstrument>,
     path: &str,
-) -> (Option<NodeId>, Result<Observation, Vec<SchemaError>>) {
+) -> (Option<NodeId>, Result<NaturalParams, Vec<SchemaError>>) {
     let Some(inst) = instruments.get(&raw.instrument) else {
         return (
             None,
@@ -182,39 +175,43 @@ pub(super) fn resolve_observation(
     (Some(node_id), result)
 }
 
-/// Convert a raw `ObsValue` into a concrete `Observation` given the
+/// Convert a raw `ObsValue` into a `NaturalParams` (`η_obs`) given the
 /// instrument's model.
 fn resolve_value(
     model: &ModelDef,
     num_categories: Option<usize>,
     value: &ObsValue,
     path: &str,
-) -> Result<Observation, Vec<SchemaError>> {
+) -> Result<NaturalParams, Vec<SchemaError>> {
     match model {
         ModelDef::GaussianNoise { noise_var } => {
             let v = extract_float(value, path)?;
-            Ok(Observation::GaussianNoise {
-                value: v,
-                noise_var: *noise_var,
+            Ok(NaturalParams::Gaussian {
+                eta1: v / noise_var,
+                eta2: -1.0 / (2.0 * noise_var),
             })
         }
 
-        ModelDef::NoisyChannel { epsilon } => {
+        ModelDef::BernoulliObs { weight } => {
             let v = extract_bool(value, path)?;
-            Ok(Observation::NoisyChannel {
-                value: v,
-                epsilon: *epsilon,
+            Ok(NaturalParams::Bernoulli {
+                eta1: if v { *weight } else { -weight },
             })
         }
 
-        ModelDef::PoissonCount => {
-            let v = extract_nonneg_int(value, path)?;
-            Ok(Observation::PoissonCount { count: v })
+        ModelDef::PoissonObs { exposure } => {
+            let count = extract_nonneg_int(value, path)?;
+            // MLE of ln(λ): ln(count / exposure)
+            // Continuity correction for count=0: use 0.5
+            let effective_count = if count == 0 { 0.5 } else { f64::from(u32::try_from(count).unwrap_or(u32::MAX)) };
+            Ok(NaturalParams::Poisson {
+                eta1: (effective_count / exposure).ln(),
+            })
         }
 
-        ModelDef::NoisyCategorical { epsilon } => {
-            let v = extract_nonneg_int(value, path)?;
-            let category = usize::try_from(v).unwrap_or(usize::MAX);
+        ModelDef::CategoricalObs { weight } => {
+            let cat = extract_nonneg_int(value, path)?;
+            let category = usize::try_from(cat).unwrap_or(usize::MAX);
             let k = num_categories.unwrap_or(0);
             if k > 0 && category >= k {
                 return Err(vec![SchemaError {
@@ -224,14 +221,23 @@ fn resolve_value(
                     ),
                 }]);
             }
-            Ok(Observation::NoisyCategorical {
-                category,
-                epsilon: *epsilon,
-                num_categories: k,
-            })
+            // η_obs has +weight at the observed category's log-ratio position.
+            // Categorical natural params are K-1 log-ratios (vs reference class K).
+            // If the observed category is the reference class (k-1), all
+            // log-ratios get -weight (reference class is more likely).
+            let dim = if k > 1 { k.saturating_sub(1) } else { 1 };
+            let mut eta = vec![0.0; dim];
+            if category < dim
+                && let Some(slot) = eta.get_mut(category)
+            {
+                *slot = *weight;
+            }
+            // If category == reference class (last), all others stay 0
+            // which effectively shifts evidence toward the reference.
+            Ok(NaturalParams::Categorical { eta })
         }
 
-        ModelDef::BetaConcentration { kappa } => {
+        ModelDef::BetaObs { kappa } => {
             let v = extract_float(value, path)?;
             if v <= 0.0 || v >= 1.0 {
                 return Err(vec![SchemaError {
@@ -239,13 +245,13 @@ fn resolve_value(
                     message: format!("value must be in (0, 1), got {v}"),
                 }]);
             }
-            Ok(Observation::BetaConcentration {
-                value: v,
-                kappa: *kappa,
+            Ok(NaturalParams::Beta {
+                eta1: kappa * v - 1.0,
+                eta2: kappa * (1.0 - v) - 1.0,
             })
         }
 
-        ModelDef::GammaRate { shape } => {
+        ModelDef::GammaObs { shape } => {
             let v = extract_float(value, path)?;
             if v <= 0.0 {
                 return Err(vec![SchemaError {
@@ -253,13 +259,13 @@ fn resolve_value(
                     message: format!("value must be > 0, got {v}"),
                 }]);
             }
-            Ok(Observation::GammaRate {
-                value: v,
-                shape: *shape,
+            Ok(NaturalParams::Gamma {
+                eta1: shape - 1.0,
+                eta2: -v,
             })
         }
 
-        ModelDef::DirichletConcentration { kappa } => {
+        ModelDef::DirichletObs { kappa } => {
             let vs = extract_vec(value, path)?;
             if vs.len() < 2 {
                 return Err(vec![SchemaError {
@@ -282,9 +288,8 @@ fn resolve_value(
                     message: format!("values must sum to 1, got {sum}"),
                 }]);
             }
-            Ok(Observation::DirichletConcentration {
-                values: vs,
-                kappa: *kappa,
+            Ok(NaturalParams::Dirichlet {
+                eta: vs.iter().map(|v| kappa * v - 1.0).collect(),
             })
         }
     }
@@ -299,7 +304,6 @@ fn extract_float(value: &ObsValue, path: &str) -> Result<f64, Vec<SchemaError>> 
     match value {
         ObsValue::Float(v) => Ok(*v),
         ObsValue::Int(v) => {
-            // Lossless: clamp to i32 range then use From<i32> for f64.
             let narrow = i32::try_from(*v).unwrap_or(if *v > 0 { i32::MAX } else { i32::MIN });
             Ok(f64::from(narrow))
         }

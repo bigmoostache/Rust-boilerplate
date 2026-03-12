@@ -235,8 +235,8 @@ instruments:
   - name: wrong_instrument
     node: A
     model:
-      type: noisy_channel
-      epsilon: 0.1
+      type: bernoulli_obs
+      weight: 2.0
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;

@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use nalgebra::DMatrix;
 
 use crate::distributions::NaturalParams;
-use crate::observation::Observation;
 
 /// Unique identifier for a graph node — the node's name.
 pub type NodeId = String;
@@ -59,8 +58,9 @@ pub struct Graph {
     pub id_to_index: HashMap<NodeId, usize>,
     /// All edges.
     pub edges: Vec<Edge>,
-    /// Observations per node.
-    pub observations: HashMap<NodeId, Vec<Observation>>,
+    /// Observations per node — each observation is a `NaturalParams`
+    /// (`η_obs`) in the same family as the node.
+    pub observations: HashMap<NodeId, Vec<NaturalParams>>,
 }
 
 impl Graph {
@@ -142,12 +142,11 @@ impl Graph {
         self.edges.len()
     }
 
-    /// Add an observation to a node.
+    /// Add an observation (as natural parameters `η_obs`) to a node.
     ///
-    /// # Panics
-    ///
-    /// Panics if the node ID doesn't exist.
-    pub fn add_observation(&mut self, node_id: NodeId, obs: Observation) {
+    /// The observation must be a `NaturalParams` in the same family
+    /// and with the same dimension as the node's distribution.
+    pub fn add_observation(&mut self, node_id: NodeId, obs: NaturalParams) {
         debug_assert!(
             self.id_to_index.contains_key(&node_id),
             "unknown node {node_id}"
@@ -157,7 +156,7 @@ impl Graph {
 
     /// Get observations for a node (empty slice if none).
     #[must_use]
-    pub fn observations_for(&self, node_id: &str) -> &[Observation] {
+    pub fn observations_for(&self, node_id: &str) -> &[NaturalParams] {
         self.observations.get(node_id).map_or(&[], Vec::as_slice)
     }
 
@@ -256,9 +255,9 @@ mod tests {
 
         graph.add_observation(
             "A".to_owned(),
-            Observation::GaussianNoise {
-                value: 1.5,
-                noise_var: 0.1,
+            NaturalParams::Gaussian {
+                eta1: 1.5 / 0.1,
+                eta2: -1.0 / (2.0 * 0.1),
             },
         );
         assert_eq!(graph.observations_for("A").len(), 1);

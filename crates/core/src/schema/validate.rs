@@ -6,7 +6,6 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::graph::{Edge, Graph, Node, NodeId};
-use crate::observation::Observation;
 
 use super::convert::{SchemaError, SchemaErrors, parse_coupling, validate_family};
 use super::observation_compat::{
@@ -286,7 +285,7 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
     }
 
     // ── Resolve observations via instruments ────────────────────
-    let mut obs_map: HashMap<NodeId, Vec<Observation>> = HashMap::new();
+    let mut obs_map: HashMap<NodeId, Vec<crate::distributions::NaturalParams>> = HashMap::new();
 
     for (idx, raw_obs) in raw.observations.iter().enumerate() {
         let prefix = format!("observations[{idx}]");

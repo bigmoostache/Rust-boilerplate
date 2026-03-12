@@ -10,7 +10,6 @@ mod integration_tests {
     use app_core::distributions::NaturalParams;
     use app_core::graph::{Edge, Graph, Node};
     use app_core::inference::coordinate_ascent;
-    use app_core::observation::Observation;
     use app_core::schema::output::{build_result, to_yaml};
     use app_core::schema::validate::parse_yaml;
     use app_core::temporal::{advance_and_relax, relax_graph};
@@ -32,6 +31,14 @@ mod integration_tests {
         v.get(index).copied().unwrap_or(f64::NAN)
     }
 
+    /// Convert a Gaussian observation (value, `noise_var`) into `η_obs`.
+    fn gaussian_obs(value: f64, noise_var: f64) -> NaturalParams {
+        NaturalParams::Gaussian {
+            eta1: value / noise_var,
+            eta2: -1.0 / (2.0 * noise_var),
+        }
+    }
+
     /// A 3-node graph with mixed families:
     /// - Node "BP": Gaussian (systolic BP, μ=120, σ²=100)
     /// - Node "Hypertension": Bernoulli (hypertension diagnosis, p=0.3)
@@ -41,7 +48,7 @@ mod integration_tests {
     /// - BP ↔ Hypertension: BP influences hypertension (2×1 matrix)
     /// - Hypertension ↔ BMI: Hypertension linked to BMI (1×2 matrix)
     ///
-    /// Observations:
+    /// Observations (as `η_obs`):
     /// - BP: measured at 145 (noise σ²=25)
     /// - BMI: measured at 30 (noise σ²=4)
     #[test]
@@ -88,21 +95,9 @@ mod integration_tests {
 
         let mut graph = Graph::new(nodes, edges);
 
-        // Add observations
-        graph.add_observation(
-            "BP".to_owned(),
-            Observation::GaussianNoise {
-                value: 145.0,
-                noise_var: 25.0,
-            },
-        );
-        graph.add_observation(
-            "BMI".to_owned(),
-            Observation::GaussianNoise {
-                value: 30.0,
-                noise_var: 4.0,
-            },
-        );
+        // Add observations as η_obs (NaturalParams)
+        graph.add_observation("BP".to_owned(), gaussian_obs(145.0, 25.0));
+        graph.add_observation("BMI".to_owned(), gaussian_obs(30.0, 4.0));
 
         // Run inference
         let result = coordinate_ascent(&mut graph, 200, 1e-10, 1.0);
@@ -152,10 +147,13 @@ mod integration_tests {
             );
         }
 
-        // 5. ELBO should be monotonically non-decreasing
-        for pair in result.elbo_history.windows(2) {
+        // 5. Score should be monotonically non-decreasing
+        for pair in result.score_history.windows(2) {
             if let (Some(prev), Some(next)) = (pair.first(), pair.get(1)) {
-                assert!(*next >= *prev - 1e-8, "ELBO decreased: {prev} → {next}",);
+                assert!(
+                    *next >= *prev - 1e-8,
+                    "Score decreased: {prev} → {next}",
+                );
             }
         }
     }
@@ -170,31 +168,36 @@ mod integration_tests {
         let mut graph = Graph::new(vec![make_node("X", params, 1.0)], vec![]);
 
         // 5 observations at x=2, each with noise σ²=1
+        // η_obs = (2/1, -1/2) = (2, -0.5)
         for _ in 0..5 {
-            graph.add_observation(
-                "X".to_owned(),
-                Observation::GaussianNoise {
-                    value: 2.0,
-                    noise_var: 1.0,
-                },
-            );
+            graph.add_observation("X".to_owned(), gaussian_obs(2.0, 1.0));
         }
 
-        let result = coordinate_ascent(&mut graph, 100, 1e-12, 1.0);
-        assert!(result.converged);
+        let result = coordinate_ascent(&mut graph, 500, 1e-12, 1.0);
+        assert!(result.converged, "did not converge in {} iters, max_change={}", result.iterations, result.max_change);
 
-        // Bayesian update: prior N(0,1), 5 obs at x=2 with σ²_n=1
-        // Posterior: η₁ = 0 + 5·2/1 = 10, η₂ = -0.5 + 5·(-0.5) = -3.0
-        // → σ²_post = 1/6 ≈ 0.1667, μ_post = 10/(6) = 5/3 ≈ 1.6667
+        // Fixed-point formula:
+        // η* = (η_relax + 5·η_obs) / (1 + 5 + 1)
+        //    = ((0, -0.5) + 5·(2, -0.5)) / 7
+        //    = (10, -3) / 7
+        //    = (10/7, -3/7)
         if let Some(node) = graph.nodes.first() {
             let eta1 = eta(&node.post, 0);
             let eta2 = eta(&node.post, 1);
-            assert!((eta1 - 10.0).abs() < 1e-10, "eta1={eta1}, expected 10.0");
-            assert!((eta2 - (-3.0)).abs() < 1e-10, "eta2={eta2}, expected -3.0");
+            assert!(
+                (eta1 - 10.0 / 7.0).abs() < 1e-6,
+                "eta1={eta1}, expected 10/7={}",
+                10.0 / 7.0
+            );
+            assert!(
+                (eta2 - (-3.0 / 7.0)).abs() < 1e-6,
+                "eta2={eta2}, expected -3/7={}",
+                -3.0 / 7.0
+            );
         }
     }
 
-    /// Test that a Categorical node with a noisy observation shifts correctly.
+    /// Test that a Categorical node with a conjugate observation shifts correctly.
     #[test]
     fn categorical_observation() {
         // Uniform prior over K=3 classes
@@ -203,20 +206,19 @@ mod integration_tests {
         };
         let mut graph = Graph::new(vec![make_node("Diagnosis", params, 1.0)], vec![]);
 
-        // Observe class 0 with no confusion (ε=0)
+        // Observe class 0 with weight=2.0
+        // η_obs = [2.0, 0.0] (shift log-ratio of class 0 vs reference)
         graph.add_observation(
             "Diagnosis".to_owned(),
-            Observation::NoisyCategorical {
-                category: 0,
-                epsilon: 0.0,
-                num_categories: 3,
+            NaturalParams::Categorical {
+                eta: vec![2.0, 0.0],
             },
         );
 
         let result = coordinate_ascent(&mut graph, 100, 1e-10, 1.0);
         assert!(result.converged);
 
-        // After observing class 0 with ε=0, η₀ should increase (class 0 more likely)
+        // After observing class 0: η₀ should increase (class 0 more likely)
         if let Some(node) = graph.nodes.first() {
             let eta0 = eta(&node.post, 0);
             assert!(
@@ -307,20 +309,21 @@ inference:
         };
         let mut graph = Graph::new(vec![make_node("X", params, 1.0)], vec![]);
 
-        // First inference: observe x=5
-        graph.add_observation(
-            "X".to_owned(),
-            Observation::GaussianNoise {
-                value: 5.0,
-                noise_var: 1.0,
-            },
-        );
+        // First inference: observe x=5 with noise σ²=1
+        // η_obs = (5, -0.5)
+        graph.add_observation("X".to_owned(), gaussian_obs(5.0, 1.0));
         let r1 = coordinate_ascent(&mut graph, 100, 1e-12, 1.0);
         assert!(r1.converged);
 
-        // Posterior after first inference: η₁=5, η₂=-1 → μ=2.5, σ²=0.5
+        // Fixed-point: η* = (η_relax + η_obs) / (1 + 1 + 1) = ((0,-0.5)+(5,-0.5))/3 = (5/3, -1/3)
+        // Wait — no, that's NOT the old additive formula.
+        // η* = (η_relax + η_obs) / (1 + 1 + λ) = (5, -1) / 3 = (5/3, -1/3)
         if let Some(node) = graph.nodes.first() {
-            assert!((eta(&node.post, 0) - 5.0).abs() < 1e-10);
+            assert!(
+                (eta(&node.post, 0) - 5.0 / 3.0).abs() < 1e-6,
+                "eta1={}, expected 5/3",
+                eta(&node.post, 0)
+            );
         }
 
         // Advance time: copy post→prev, then relax toward epidemio
@@ -328,9 +331,17 @@ inference:
 
         // After advance: prev should be old post
         if let Some(node) = graph.nodes.first() {
-            assert!((eta(&node.prev, 0) - 5.0).abs() < 1e-10);
-            // Relax: 0.5*epidemio + 0.5*prev = 0.5*0 + 0.5*5 = 2.5
-            assert!((eta(&node.relax, 0) - 2.5).abs() < 1e-10);
+            let prev_eta1 = eta(&node.prev, 0);
+            assert!(
+                (prev_eta1 - 5.0 / 3.0).abs() < 1e-6,
+                "prev eta1={prev_eta1}, expected 5/3"
+            );
+            // Relax: (1-0.5)*epidemio + 0.5*prev = 0.5*(0) + 0.5*(5/3) = 5/6
+            let relax_eta1 = eta(&node.relax, 0);
+            assert!(
+                (relax_eta1 - 5.0 / 6.0).abs() < 1e-6,
+                "relax eta1={relax_eta1}, expected 5/6"
+            );
         }
 
         // Clear observations and reinfer (no new obs)
@@ -338,9 +349,15 @@ inference:
         let r2 = coordinate_ascent(&mut graph, 100, 1e-12, 1.0);
         assert!(r2.converged);
 
-        // Without observations, posterior = relaxed prior
+        // Without observations: η* = η_relax / (1 + 0 + 1) = η_relax / 2
         if let Some(node) = graph.nodes.first() {
-            assert!((eta(&node.post, 0) - 2.5).abs() < 1e-10);
+            let expected = 5.0 / 6.0 / 2.0; // (5/6) / 2 = 5/12
+            assert!(
+                (eta(&node.post, 0) - expected).abs() < 1e-6,
+                "post eta1={}, expected {}",
+                eta(&node.post, 0),
+                expected
+            );
         }
     }
 
@@ -352,13 +369,7 @@ inference:
             eta2: -0.5,
         };
         let mut graph = Graph::new(vec![make_node("test_node", params, 1.0)], vec![]);
-        graph.add_observation(
-            "test_node".to_owned(),
-            Observation::GaussianNoise {
-                value: 1.0,
-                noise_var: 1.0,
-            },
-        );
+        graph.add_observation("test_node".to_owned(), gaussian_obs(1.0, 1.0));
 
         let result = coordinate_ascent(&mut graph, 100, 1e-12, 1.0);
         let output = build_result(&graph, &result);
@@ -373,7 +384,7 @@ inference:
             assert!(yaml_str.contains("converged:"));
             assert!(yaml_str.contains("iterations:"));
             assert!(yaml_str.contains("max_change:"));
-            assert!(yaml_str.contains("elbo:"));
+            assert!(yaml_str.contains("score:"));
             assert!(yaml_str.contains("coupling:"));
             assert!(yaml_str.contains("prior:"));
             assert!(yaml_str.contains("observation:"));

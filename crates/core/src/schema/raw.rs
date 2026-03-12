@@ -155,53 +155,89 @@ pub struct InstrumentDef {
 
 /// Measurement model with noise parameters.
 ///
-/// Each variant defines how the measured value relates to the latent
-/// variable, including the instrument's noise characteristics.
+/// Each variant defines a **conjugate** observation model: the
+/// instrument + measured value produce a `NaturalParams` (`η_obs`) in
+/// the same exponential family as the target node.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum ModelDef {
-    /// Gaussian noise: `p(obs | x) = N(obs; x, noise_var)`.
+    /// Gaussian noise: observed `value` with known `noise_var`.
+    ///
+    /// → `η_obs = (value / σ²_n, −1 / (2 σ²_n))`
+    ///
+    /// Compatible with: Gaussian nodes.
     #[serde(rename = "gaussian_noise")]
     GaussianNoise {
         /// Noise variance `σ² > 0`.
         noise_var: f64,
     },
 
-    /// Noisy binary channel: `P(obs=1 | p) = (1−ε)·p + ε·(1−p)`.
-    #[serde(rename = "noisy_channel")]
-    NoisyChannel {
-        /// Symmetric error probability `ε ∈ [0, 0.5)`.
-        epsilon: f64,
+    /// Bernoulli observation with a strength weight.
+    ///
+    /// → `η_obs = +weight` (if true) or `−weight` (if false)
+    ///
+    /// Compatible with: Bernoulli nodes.
+    #[serde(rename = "bernoulli_obs")]
+    BernoulliObs {
+        /// Evidence strength `w > 0` (logit-scale shift).
+        weight: f64,
     },
 
-    /// Direct Poisson count (no noise parameters needed).
-    #[serde(rename = "poisson_count")]
-    PoissonCount,
-
-    /// Noisy categorical: uniform confusion with probability `ε`.
-    #[serde(rename = "noisy_categorical")]
-    NoisyCategorical {
-        /// Confusion probability `ε ∈ [0, 1)`.
-        epsilon: f64,
+    /// Poisson count observation.
+    ///
+    /// → `η_obs = ln(count / exposure)` (MLE of ln(λ))
+    ///
+    /// For count=0, uses `ln(ε / exposure)` where `ε = 0.5`
+    /// (continuity correction).
+    ///
+    /// Compatible with: Poisson nodes.
+    #[serde(rename = "poisson_obs")]
+    PoissonObs {
+        /// Exposure time or scaling factor (> 0). The "true" rate is
+        /// `count / exposure`.
+        exposure: f64,
     },
 
-    /// Beta concentration: observed proportion ~ `Beta(κp, κ(1−p))`.
-    #[serde(rename = "beta_concentration")]
-    BetaConcentration {
+    /// Categorical observation with a strength weight.
+    ///
+    /// → `η_obs` has `+weight` at the observed category, `0` elsewhere.
+    ///
+    /// Compatible with: Categorical nodes.
+    #[serde(rename = "categorical_obs")]
+    CategoricalObs {
+        /// Evidence strength `w > 0` (log-ratio scale shift).
+        weight: f64,
+    },
+
+    /// Beta proportion observation with concentration.
+    ///
+    /// → `η_obs = (κ·v − 1, κ·(1−v) − 1)` (Beta natural params)
+    ///
+    /// Compatible with: Beta nodes.
+    #[serde(rename = "beta_obs")]
+    BetaObs {
         /// Concentration `κ > 0` (higher = more precise).
         kappa: f64,
     },
 
-    /// Gamma rate: observed value ~ `Gamma(shape, mean_rate)`.
-    #[serde(rename = "gamma_rate")]
-    GammaRate {
-        /// Shape of the observation noise.
+    /// Gamma rate observation with known shape.
+    ///
+    /// → `η_obs = (shape − 1, −value)` (Gamma natural params)
+    ///
+    /// Compatible with: Gamma nodes.
+    #[serde(rename = "gamma_obs")]
+    GammaObs {
+        /// Shape of the observation `s > 0`.
         shape: f64,
     },
 
-    /// Dirichlet concentration: observed proportions ~ `Dir(κ·p)`.
-    #[serde(rename = "dirichlet_concentration")]
-    DirichletConcentration {
+    /// Dirichlet proportion observation with concentration.
+    ///
+    /// → `η_obs_k = κ · v_k − 1` (Dirichlet natural params)
+    ///
+    /// Compatible with: Dirichlet nodes.
+    #[serde(rename = "dirichlet_obs")]
+    DirichletObs {
         /// Concentration `κ > 0`.
         kappa: f64,
     },
@@ -233,12 +269,12 @@ pub struct ObservationDef {
     ///
     /// The type of value depends on the instrument's model:
     /// - `gaussian_noise`: a float (e.g. `39.5`)
-    /// - `noisy_channel`: a boolean (`true` / `false`)
-    /// - `poisson_count`: an integer (e.g. `7`)
-    /// - `noisy_categorical`: an integer category index (e.g. `2`)
-    /// - `beta_concentration`: a float proportion in (0, 1)
-    /// - `gamma_rate`: a positive float
-    /// - `dirichlet_concentration`: a list of floats summing to ~1
+    /// - `bernoulli_obs`: a boolean (`true` / `false`)
+    /// - `poisson_obs`: an integer (e.g. `7`)
+    /// - `categorical_obs`: an integer category index (e.g. `2`)
+    /// - `beta_obs`: a float proportion in (0, 1)
+    /// - `gamma_obs`: a positive float
+    /// - `dirichlet_obs`: a list of floats summing to ~1
     pub value: ObsValue,
 }
 
