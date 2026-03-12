@@ -60,29 +60,17 @@ nodes:
       # temperature: b_11 calibrated so 39.5°C shifts flu by ~+0.08
       # E[T_gauss] ≈ (37, 1370) at prior; b_11 × 37 ≈ 0.22 contribution
       - node: temperature
-        coupling:
-          - [0.1, 0.0]
-          - [0.0,   0.0]
 
       # headache: strong flu marker
       # b_11 couples E[log x_flu] ↔ E[log x_headache]
       - node: headache
-        coupling:
-          - [8.0, 0.0]
-          - [0.0,  8.0]
 
       # body_aches: pathognomonic of flu
       - node: body_aches
-        coupling:
-          - [8.0, 0.0]
-          - [0.0,  8.0]
 
       # flu↔tonsillitis: competitive, one presence reduces the other
       # Asymmetric: flu is more exclusive of tonsillitis than reverse
       - node: tonsillitis
-        coupling:
-          - [-2.0, 0.0]
-          - [0.0,   0.0]
 
   - name: tonsillitis
     family:
@@ -93,18 +81,9 @@ nodes:
     coupled_with:
       # temperature: angine donne moins de fièvre que grippe
       - node: temperature
-        coupling:
-          - [0.004, 0.0]
-          - [0.0,   0.0]
 
       # sore_throat: pathognomonic of tonsillitis
       - node: sore_throat
-        coupling:
-          - [0.40, 0.0]
-          - [0.0,  0.0]
 
       # headache: weaker association than flu
       - node: headache
-        coupling:
-          - [0.12, 0.0]
-          - [0.0,  0.0]

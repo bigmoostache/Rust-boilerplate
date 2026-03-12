@@ -87,3 +87,31 @@ calibration:
       - type: conditional_mean
         x_b: [0.9, 0.1]
         target_mean: 0.10
+
+# ── body_aches ← flu ──────────────────────────────────────────
+# "When flu = 0.9, expected body_aches probability is 0.70"
+# Body aches are pathognomonic of flu — strong marker
+
+  - edge: [body_aches, flu]
+    statements:
+      - type: no_effect
+        x_b: [0.01, 0.99]
+      - type: concentration_unchanged
+        x_b: [0.9, 0.1]
+      - type: conditional_mean
+        x_b: [0.9, 0.1]
+        target_mean: 0.70
+
+# ── flu ← tonsillitis ─────────────────────────────────────────
+# "When tonsillitis = 0.9, expected flu probability drops to 0.05"
+# Competitive: tonsillitis presence reduces flu likelihood
+
+  - edge: [flu, tonsillitis]
+    statements:
+      - type: no_effect
+        x_b: [0.01, 0.99]
+      - type: concentration_unchanged
+        x_b: [0.9, 0.1]
+      - type: conditional_mean
+        x_b: [0.9, 0.1]
+        target_mean: 0.05
