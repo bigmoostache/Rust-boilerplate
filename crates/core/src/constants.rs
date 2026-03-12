@@ -27,28 +27,6 @@ pub const MIN_ALPHA: f64 = 0.01;
 pub const NATURAL_PARAM_EPS: f64 = 1e-10;
 
 // ---------------------------------------------------------------------------
-// Observations — numerical thresholds
-// ---------------------------------------------------------------------------
-
-/// Threshold below which `ε` is treated as zero (perfect observation).
-///
-/// When `ε < EPSILON_ZERO_THRESHOLD`, the instrument is considered
-/// noise-free and the `η_obs` is clamped to `±PERFECT_OBS_ETA`.
-pub const EPSILON_ZERO_THRESHOLD: f64 = 1e-15;
-
-/// `η_obs` value for a perfect observation (`ε ≈ 0`).
-///
-/// `η = 20` corresponds to `p ≈ 1 − 2·10⁻⁹` in logit scale —
-/// effectively certain without causing overflow.
-pub const PERFECT_OBS_ETA: f64 = 20.0;
-
-/// Continuity correction for Poisson count = 0.
-///
-/// When the observed count is zero, `ln(0)` is undefined.  We use
-/// `ln(POISSON_ZERO_CORRECTION / exposure)` instead.
-pub const POISSON_ZERO_CORRECTION: f64 = 0.5;
-
-// ---------------------------------------------------------------------------
 // Special functions — Bernoulli numbers and asymptotic coefficients
 // ---------------------------------------------------------------------------
 

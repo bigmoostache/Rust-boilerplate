@@ -58,9 +58,9 @@ mod integration_tests {
             eta1: 120.0 / 100.0, // μ/σ² = 1.2
             eta2: -1.0 / 200.0,  // -1/(2σ²) = -0.005
         };
-        // Node "Hypertension": Bernoulli, p=0.3 → η = logit(0.3) = ln(3/7)
-        let hyp_params = NaturalParams::Bernoulli {
-            eta1: (0.3_f64 / 0.7).ln(),
+        // Node "Hypertension": Beta(0.3, 0.7) → Dirichlet K=2, η = [α−1, β−1] = [−0.7, −0.3]
+        let hyp_params = NaturalParams::Dirichlet {
+            eta: vec![0.3 - 1.0, 0.7 - 1.0],
         };
         // Node "BMI": Gaussian BMI, μ=25, σ²=9
         let bmi_params = NaturalParams::Gaussian {
@@ -74,11 +74,11 @@ mod integration_tests {
             make_node("BMI", bmi_params, 24.0),
         ];
 
-        // BP → Hypertension coupling: 2×1 matrix (suff stats of Gaussian are 2D, Bernoulli is 1D)
-        let bp_hyp = DMatrix::from_row_slice(2, 1, &[0.01, 0.0]);
+        // BP → Hypertension coupling: 2×2 matrix (Gaussian d=2, Dirichlet K=2 d=2)
+        let bp_hyp = DMatrix::from_row_slice(2, 2, &[0.01, 0.0, 0.0, 0.0]);
 
-        // Hypertension → BMI coupling: 1×2 matrix
-        let hyp_bmi = DMatrix::from_row_slice(1, 2, &[0.5, 0.0]);
+        // Hypertension → BMI coupling: 2×2 matrix (Dirichlet K=2 d=2, Gaussian d=2)
+        let hyp_bmi = DMatrix::from_row_slice(2, 2, &[0.5, 0.0, 0.0, 0.0]);
 
         let edges = vec![
             Edge {
@@ -125,13 +125,13 @@ mod integration_tests {
             );
         }
 
-        // 3. Hypertension probability should increase (observed high BP and high BMI)
+        // 3. Hypertension α₁ should increase (observed high BP and high BMI)
         if let Some(node) = graph.nodes.get(1) {
-            let hyp_eta = eta(&node.post, 0);
-            let prior_logit = (0.3_f64 / 0.7).ln();
+            let hyp_eta0 = eta(&node.post, 0);
+            let prior_eta0 = 0.3 - 1.0; // = -0.7
             assert!(
-                hyp_eta > prior_logit,
-                "hypertension logit should increase from prior ({prior_logit}), got {hyp_eta}"
+                hyp_eta0 > prior_eta0,
+                "hypertension η₀ should increase from prior ({prior_eta0}), got {hyp_eta0}"
             );
         }
 
@@ -198,33 +198,35 @@ mod integration_tests {
         }
     }
 
-    /// Test that a Categorical node with a conjugate observation shifts correctly.
+    /// Test that a Dirichlet node with a conjugate observation shifts correctly.
     #[test]
-    fn categorical_observation() {
-        // Uniform prior over K=3 classes
-        let params = NaturalParams::Categorical {
-            eta: vec![0.0, 0.0],
+    fn dirichlet_observation() {
+        // Uniform prior over K=3: α = [1, 1, 1] → η = [0, 0, 0]
+        let params = NaturalParams::Dirichlet {
+            eta: vec![0.0, 0.0, 0.0],
         };
         let mut graph = Graph::new(vec![make_node("Diagnosis", params, 1.0)], vec![]);
 
-        // Observe class 0 with weight=2.0
-        // η_obs = [2.0, 0.0] (shift log-ratio of class 0 vs reference)
+        // Observe proportion [0.7, 0.2, 0.1] with κ=10
+        // η_obs_k = κ·v_k − 1 = [6, 1, 0]
         graph.add_observation(
             "Diagnosis".to_owned(),
-            NaturalParams::Categorical {
-                eta: vec![2.0, 0.0],
+            NaturalParams::Dirichlet {
+                eta: vec![6.0, 1.0, 0.0],
             },
         );
 
         let result = coordinate_ascent(&mut graph, 100, 1e-10, 1.0);
         assert!(result.converged);
 
-        // After observing class 0: η₀ should increase (class 0 more likely)
+        // After observing: η₀ should be largest (class 0 most likely)
         if let Some(node) = graph.nodes.first() {
             let eta0 = eta(&node.post, 0);
+            let eta1 = eta(&node.post, 1);
+            let eta2 = eta(&node.post, 2);
             assert!(
-                eta0 > 0.0,
-                "η₀ should increase after observing class 0, got {eta0}",
+                eta0 > eta1 && eta1 > eta2,
+                "should have η₀ > η₁ > η₂, got [{eta0}, {eta1}, {eta2}]",
             );
         }
     }
@@ -242,15 +244,16 @@ nodes:
     tau: 30.0
   - name: "hypertension"
     family:
-      type: bernoulli
-      p: 0.3
+      type: beta
+      alpha: 1.3
+      beta: 3.0
     tau: 365.0
 edges:
   - node_a: blood_pressure
     node_b: hypertension
     coupling:
-      - [0.01]
-      - [0.005]
+      - [0.01, 0.0]
+      - [0.0, 0.005]
 instruments:
   - name: bp_cuff
     node: blood_pressure

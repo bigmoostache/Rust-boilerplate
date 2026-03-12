@@ -92,6 +92,7 @@ pub(super) fn validate_family(
             })
         }
         FamilyDef::Beta { alpha, beta } => {
+            // Beta is sugar for Dirichlet with K=2.
             if *alpha <= 0.0 {
                 errors.push(SchemaError {
                     path: format!("{path}.alpha"),
@@ -104,63 +105,9 @@ pub(super) fn validate_family(
                     message: format!("beta must be > 0, got {beta}"),
                 });
             }
-            errors.is_empty().then(|| NaturalParams::Beta {
-                eta1: alpha - 1.0,
-                eta2: beta - 1.0,
+            errors.is_empty().then(|| NaturalParams::Dirichlet {
+                eta: vec![alpha - 1.0, beta - 1.0],
             })
-        }
-        FamilyDef::Poisson { lambda } => {
-            if *lambda <= 0.0 {
-                errors.push(SchemaError {
-                    path: format!("{path}.lambda"),
-                    message: format!("lambda must be > 0, got {lambda}"),
-                });
-            }
-            errors
-                .is_empty()
-                .then(|| NaturalParams::Poisson { eta1: lambda.ln() })
-        }
-        FamilyDef::Bernoulli { p } => {
-            if *p <= 0.0 || *p >= 1.0 {
-                errors.push(SchemaError {
-                    path: format!("{path}.p"),
-                    message: format!("p must be in (0, 1), got {p}"),
-                });
-            }
-            errors.is_empty().then(|| NaturalParams::Bernoulli {
-                eta1: (p / (1.0 - p)).ln(),
-            })
-        }
-        FamilyDef::Categorical { probs } => {
-            if probs.len() < 2 {
-                errors.push(SchemaError {
-                    path: format!("{path}.probs"),
-                    message: "categorical needs at least 2 categories".to_owned(),
-                });
-            }
-            for (k, pk) in probs.iter().enumerate() {
-                if *pk <= 0.0 {
-                    errors.push(SchemaError {
-                        path: format!("{path}.probs[{k}]"),
-                        message: format!("probability must be > 0, got {pk}"),
-                    });
-                }
-            }
-            let sum: f64 = probs.iter().sum();
-            if (sum - 1.0).abs() > 1e-6 {
-                errors.push(SchemaError {
-                    path: format!("{path}.probs"),
-                    message: format!("probabilities must sum to 1, got {sum}"),
-                });
-            }
-            if errors.is_empty() {
-                probs.split_last().map(|(&last, rest)| {
-                    let eta: Vec<f64> = rest.iter().map(|pk: &f64| (pk / last).ln()).collect();
-                    NaturalParams::Categorical { eta }
-                })
-            } else {
-                None
-            }
         }
         FamilyDef::Dirichlet { alpha } => {
             if alpha.len() < 2 {

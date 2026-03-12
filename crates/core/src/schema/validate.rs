@@ -265,14 +265,8 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
             continue;
         }
 
-        // Extract num_categories for categorical nodes
-        let num_categories = node_families.get(inst.node.as_str()).and_then(|f| {
-            if let FamilyDef::Categorical { probs } = f {
-                Some(probs.len())
-            } else {
-                None
-            }
-        });
+        // num_categories is no longer needed (Categorical was removed).
+        let num_categories = None;
 
         let _prev = validated_instruments.insert(
             inst.name.clone(),

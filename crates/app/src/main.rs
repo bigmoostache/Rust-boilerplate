@@ -284,12 +284,6 @@ fn posterior_columns(
             format!("mu={mu:.2}"),
             format!("sigma2={sigma2:.2}"),
         ),
-        app_core::schema::raw::FamilyDef::Bernoulli { p: prob } => (
-            p.name.clone(),
-            "bernoulli".to_owned(),
-            format!("p={prob:.2}"),
-            String::new(),
-        ),
         app_core::schema::raw::FamilyDef::Gamma { alpha, beta } => (
             p.name.clone(),
             "gamma".to_owned(),
@@ -302,21 +296,6 @@ fn posterior_columns(
             format!("alpha={alpha:.2}"),
             format!("beta={beta:.2}"),
         ),
-        app_core::schema::raw::FamilyDef::Poisson { lambda } => (
-            p.name.clone(),
-            "poisson".to_owned(),
-            format!("lambda={lambda:.2}"),
-            String::new(),
-        ),
-        app_core::schema::raw::FamilyDef::Categorical { probs } => {
-            let ps: Vec<String> = probs.iter().map(|v| format!("{v:.2}")).collect();
-            (
-                p.name.clone(),
-                "categorical".to_owned(),
-                format!("probs=[{}]", ps.join(", ")),
-                String::new(),
-            )
-        }
         app_core::schema::raw::FamilyDef::Dirichlet { alpha } => {
             let as_str: Vec<String> = alpha.iter().map(|v| format!("{v:.2}")).collect();
             (

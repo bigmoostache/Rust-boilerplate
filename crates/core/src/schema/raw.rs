@@ -100,33 +100,15 @@ pub enum FamilyDef {
     },
 
     /// `type: beta`, `alpha`, `beta`.
+    ///
+    /// Sugar for `Dirichlet([alpha, beta])` — stored internally as
+    /// `Dirichlet` with `K = 2`.
     #[serde(rename = "beta")]
     Beta {
         /// Shape α (must be > 0).
         alpha: f64,
         /// Shape β (must be > 0).
         beta: f64,
-    },
-
-    /// `type: poisson`, `lambda`.
-    #[serde(rename = "poisson")]
-    Poisson {
-        /// Rate (must be > 0).
-        lambda: f64,
-    },
-
-    /// `type: bernoulli`, `p`.
-    #[serde(rename = "bernoulli")]
-    Bernoulli {
-        /// Probability (must be in `(0, 1)`).
-        p: f64,
-    },
-
-    /// `type: categorical`, `probs`.
-    #[serde(rename = "categorical")]
-    Categorical {
-        /// Probabilities (must sum to 1, all > 0).
-        probs: Vec<f64>,
     },
 
     /// `type: dirichlet`, `alpha`.
@@ -170,56 +152,6 @@ pub enum ModelDef {
     GaussianNoise {
         /// Noise variance `σ² > 0`.
         noise_var: f64,
-    },
-
-    /// Bernoulli observation with measurement noise.
-    ///
-    /// The instrument has a symmetric error rate `ε ∈ [0, 0.5)`:
-    /// - `P(measure true  | truly true)  = 1 − ε`
-    /// - `P(measure false | truly false) = 1 − ε`
-    ///
-    /// For `obs = true`:  `η_obs = ln((1−ε) / ε)`
-    /// For `obs = false`: `η_obs = ln(ε / (1−ε)) = −ln((1−ε) / ε)`
-    ///
-    /// Compatible with: Bernoulli nodes.
-    #[serde(rename = "bernoulli_obs")]
-    BernoulliObs {
-        /// Symmetric error probability `ε ∈ [0, 0.5)`.
-        /// `ε = 0` means perfect observation.
-        epsilon: f64,
-    },
-
-    /// Poisson count observation.
-    ///
-    /// → `η_obs = ln(count / exposure)` (MLE of ln(λ))
-    ///
-    /// For count=0, uses `ln(ε / exposure)` where `ε = 0.5`
-    /// (continuity correction).
-    ///
-    /// Compatible with: Poisson nodes.
-    #[serde(rename = "poisson_obs")]
-    PoissonObs {
-        /// Exposure time or scaling factor (> 0). The "true" rate is
-        /// `count / exposure`.
-        exposure: f64,
-    },
-
-    /// Categorical observation with uniform confusion noise.
-    ///
-    /// The instrument has a confusion probability `ε ∈ [0, 1)`:
-    /// - `P(measure k | truly k) = 1 − ε`
-    /// - `P(measure k | truly j≠k) = ε / (K−1)`
-    ///
-    /// For observed category `k`:
-    /// `η_obs_k = ln((1−ε) / (ε/(K−1))) = ln((1−ε)(K−1) / ε)`
-    /// Other log-ratios stay at 0.
-    ///
-    /// Compatible with: Categorical nodes.
-    #[serde(rename = "categorical_obs")]
-    CategoricalObs {
-        /// Uniform confusion probability `ε ∈ [0, 1)`.
-        /// `ε = 0` means perfect observation.
-        epsilon: f64,
     },
 
     /// Beta proportion observation with concentration.
@@ -282,9 +214,6 @@ pub struct ObservationDef {
     ///
     /// The type of value depends on the instrument's model:
     /// - `gaussian_noise`: a float (e.g. `39.5`)
-    /// - `bernoulli_obs`: a boolean (`true` / `false`)
-    /// - `poisson_obs`: an integer (e.g. `7`)
-    /// - `categorical_obs`: an integer category index (e.g. `2`)
     /// - `beta_obs`: a float proportion in (0, 1)
     /// - `gamma_obs`: a positive float
     /// - `dirichlet_obs`: a list of floats summing to ~1
@@ -298,9 +227,9 @@ pub struct ObservationDef {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum ObsValue {
-    /// A boolean value (for noisy channel).
+    /// A boolean value (rejected with a clear error message).
     Bool(bool),
-    /// An integer value (for poisson count or categorical index).
+    /// An integer value (auto-converted to float).
     Int(i64),
     /// A floating-point value.
     Float(f64),

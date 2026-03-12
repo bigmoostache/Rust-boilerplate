@@ -10,7 +10,6 @@
 
 use std::collections::HashMap;
 
-use crate::constants::{EPSILON_ZERO_THRESHOLD, PERFECT_OBS_ETA, POISSON_ZERO_CORRECTION};
 use crate::distributions::NaturalParams;
 use crate::graph::NodeId;
 
@@ -55,30 +54,6 @@ pub(super) fn validate_instrument(
                 });
             }
         }
-        ModelDef::BernoulliObs { epsilon } => {
-            if *epsilon < 0.0 || *epsilon >= 0.5 {
-                errors.push(SchemaError {
-                    path: format!("{path}.model.epsilon"),
-                    message: format!("epsilon must be in [0, 0.5), got {epsilon}"),
-                });
-            }
-        }
-        ModelDef::CategoricalObs { epsilon } => {
-            if *epsilon < 0.0 || *epsilon >= 1.0 {
-                errors.push(SchemaError {
-                    path: format!("{path}.model.epsilon"),
-                    message: format!("epsilon must be in [0, 1), got {epsilon}"),
-                });
-            }
-        }
-        ModelDef::PoissonObs { exposure } => {
-            if *exposure <= 0.0 {
-                errors.push(SchemaError {
-                    path: format!("{path}.model.exposure"),
-                    message: format!("exposure must be > 0, got {exposure}"),
-                });
-            }
-        }
         ModelDef::BetaObs { kappa } | ModelDef::DirichletObs { kappa } => {
             if *kappa <= 0.0 {
                 errors.push(SchemaError {
@@ -118,15 +93,11 @@ pub(super) fn check_model_family_compat(
     let compatible = matches!(
         (model, family),
         (ModelDef::GaussianNoise { .. }, FamilyDef::Gaussian { .. })
-            | (ModelDef::BernoulliObs { .. }, FamilyDef::Bernoulli { .. })
-            | (ModelDef::PoissonObs { .. }, FamilyDef::Poisson { .. })
-            | (
-                ModelDef::CategoricalObs { .. },
-                FamilyDef::Categorical { .. }
-            )
             | (ModelDef::BetaObs { .. }, FamilyDef::Beta { .. })
+            | (ModelDef::BetaObs { .. }, FamilyDef::Dirichlet { .. })
             | (ModelDef::GammaObs { .. }, FamilyDef::Gamma { .. })
             | (ModelDef::DirichletObs { .. }, FamilyDef::Dirichlet { .. })
+            | (ModelDef::DirichletObs { .. }, FamilyDef::Beta { .. })
     );
 
     if compatible {
@@ -134,9 +105,6 @@ pub(super) fn check_model_family_compat(
     } else {
         let model_type = match model {
             ModelDef::GaussianNoise { .. } => "gaussian_noise",
-            ModelDef::BernoulliObs { .. } => "bernoulli_obs",
-            ModelDef::PoissonObs { .. } => "poisson_obs",
-            ModelDef::CategoricalObs { .. } => "categorical_obs",
             ModelDef::BetaObs { .. } => "beta_obs",
             ModelDef::GammaObs { .. } => "gamma_obs",
             ModelDef::DirichletObs { .. } => "dirichlet_obs",
@@ -145,9 +113,6 @@ pub(super) fn check_model_family_compat(
             FamilyDef::Gaussian { .. } => "gaussian",
             FamilyDef::Gamma { .. } => "gamma",
             FamilyDef::Beta { .. } => "beta",
-            FamilyDef::Poisson { .. } => "poisson",
-            FamilyDef::Bernoulli { .. } => "bernoulli",
-            FamilyDef::Categorical { .. } => "categorical",
             FamilyDef::Dirichlet { .. } => "dirichlet",
         };
         Some(SchemaError {
@@ -191,7 +156,7 @@ pub(super) fn resolve_observation(
 /// instrument's model.
 fn resolve_value(
     model: &ModelDef,
-    num_categories: Option<usize>,
+    _num_categories: Option<usize>,
     value: &ObsValue,
     path: &str,
 ) -> Result<NaturalParams, Vec<SchemaError>> {
@@ -204,73 +169,6 @@ fn resolve_value(
             })
         }
 
-        ModelDef::BernoulliObs { epsilon } => {
-            let v = extract_bool(value, path)?;
-            // ε = 0 → perfect observation → η_obs = ±∞ → clamp
-            let eta = if *epsilon < EPSILON_ZERO_THRESHOLD {
-                if v { PERFECT_OBS_ETA } else { -PERFECT_OBS_ETA }
-            } else {
-                let log_odds = ((1.0 - epsilon) / epsilon).ln();
-                if v { log_odds } else { -log_odds }
-            };
-            Ok(NaturalParams::Bernoulli { eta1: eta })
-        }
-
-        ModelDef::PoissonObs { exposure } => {
-            let count = extract_nonneg_int(value, path)?;
-            // Continuity correction for count=0
-            let effective_count = if count == 0 {
-                POISSON_ZERO_CORRECTION
-            } else {
-                f64::from(u32::try_from(count).unwrap_or(u32::MAX))
-            };
-            Ok(NaturalParams::Poisson {
-                eta1: (effective_count / exposure).ln(),
-            })
-        }
-
-        ModelDef::CategoricalObs { epsilon } => {
-            let cat = extract_nonneg_int(value, path)?;
-            let category = usize::try_from(cat).unwrap_or(usize::MAX);
-            let k = num_categories.unwrap_or(0);
-            if k > 0 && category >= k {
-                return Err(vec![SchemaError {
-                    path: format!("{path}.value"),
-                    message: format!(
-                        "category index {category} out of range for {k}-category node"
-                    ),
-                }]);
-            }
-            // Categorical natural params are K-1 log-ratios (vs reference class K-1).
-            let dim = if k > 1 { k.saturating_sub(1) } else { 1 };
-
-            // Compute log-odds from confusion matrix:
-            // P(measure cat | truly cat) = 1 − ε
-            // P(measure cat | truly j≠cat) = ε / (K−1)
-            // log-odds = ln((1−ε) / (ε/(K−1))) = ln((1−ε)(K−1) / ε)
-            let log_odds = if *epsilon < EPSILON_ZERO_THRESHOLD {
-                PERFECT_OBS_ETA // perfect observation → clamp
-            } else {
-                let k_f = f64::from(u32::try_from(k.max(2)).unwrap_or(u32::MAX));
-                ((1.0 - epsilon) * (k_f - 1.0) / epsilon).ln()
-            };
-
-            let mut eta = vec![0.0; dim];
-            if category < dim
-                && let Some(slot) = eta.get_mut(category)
-            {
-                *slot = log_odds;
-            }
-            // If category == reference class (last), all log-ratios get
-            // −log_odds (reference is more likely than each alternative).
-            if category >= dim {
-                for e in &mut eta {
-                    *e = -log_odds;
-                }
-            }
-            Ok(NaturalParams::Categorical { eta })
-        }
-
         ModelDef::BetaObs { kappa } => {
             let v = extract_float(value, path)?;
             if v <= 0.0 || v >= 1.0 {
@@ -279,9 +177,9 @@ fn resolve_value(
                     message: format!("value must be in (0, 1), got {v}"),
                 }]);
             }
-            Ok(NaturalParams::Beta {
-                eta1: kappa * v - 1.0,
-                eta2: kappa * (1.0 - v) - 1.0,
+            // Beta is Dirichlet K=2: η_obs = [κ·v − 1, κ·(1−v) − 1]
+            Ok(NaturalParams::Dirichlet {
+                eta: vec![kappa * v - 1.0, kappa * (1.0 - v) - 1.0],
             })
         }
 
@@ -344,32 +242,6 @@ fn extract_float(value: &ObsValue, path: &str) -> Result<f64, Vec<SchemaError>> 
         ObsValue::Bool(_) | ObsValue::Vec(_) => Err(vec![SchemaError {
             path: format!("{path}.value"),
             message: "expected a numeric value".to_owned(),
-        }]),
-    }
-}
-
-/// Extract a boolean value from a raw observation value.
-fn extract_bool(value: &ObsValue, path: &str) -> Result<bool, Vec<SchemaError>> {
-    match value {
-        ObsValue::Bool(v) => Ok(*v),
-        ObsValue::Float(_) | ObsValue::Int(_) | ObsValue::Vec(_) => Err(vec![SchemaError {
-            path: format!("{path}.value"),
-            message: "expected a boolean value (true/false)".to_owned(),
-        }]),
-    }
-}
-
-/// Extract a non-negative integer from a raw observation value.
-fn extract_nonneg_int(value: &ObsValue, path: &str) -> Result<u64, Vec<SchemaError>> {
-    match value {
-        ObsValue::Int(v) if *v >= 0 => Ok(u64::try_from(*v).unwrap_or(u64::MAX)),
-        ObsValue::Int(v) => Err(vec![SchemaError {
-            path: format!("{path}.value"),
-            message: format!("expected a non-negative integer, got {v}"),
-        }]),
-        ObsValue::Bool(_) | ObsValue::Float(_) | ObsValue::Vec(_) => Err(vec![SchemaError {
-            path: format!("{path}.value"),
-            message: "expected an integer value".to_owned(),
         }]),
     }
 }

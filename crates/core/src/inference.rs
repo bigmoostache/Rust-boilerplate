@@ -239,10 +239,7 @@ fn spectral_norm(m: &DMatrix<f64>) -> f64 {
 /// Domain constraints:
 /// - Gaussian: `η₂ < 0` (clamp to `−ε`)
 /// - Gamma: `η₁ > −1`, `η₂ < 0`
-/// - Beta: `η₁ > −1`, `η₂ > −1`
-/// - Poisson: no constraint (any real η₁ is valid)
-/// - Bernoulli: no constraint (any real η₁ is valid)
-/// - Categorical / Dirichlet: no per-component constraint
+/// - Dirichlet: no per-component constraint
 fn clamp_natural_params(params: NaturalParams) -> Option<NaturalParams> {
     match params {
         NaturalParams::Gaussian { eta1, eta2 } => {
@@ -263,28 +260,7 @@ fn clamp_natural_params(params: NaturalParams) -> Option<NaturalParams> {
                 eta2: eta2.min(-NATURAL_PARAM_EPS),
             })
         }
-        NaturalParams::Beta { eta1, eta2 } => {
-            if eta1.is_nan() || eta2.is_nan() {
-                return None;
-            }
-            Some(NaturalParams::Beta {
-                eta1: eta1.max(-1.0 + NATURAL_PARAM_EPS),
-                eta2: eta2.max(-1.0 + NATURAL_PARAM_EPS),
-            })
-        }
-        NaturalParams::Poisson { eta1 } => {
-            if eta1.is_nan() {
-                return None;
-            }
-            Some(NaturalParams::Poisson { eta1 })
-        }
-        NaturalParams::Bernoulli { eta1 } => {
-            if eta1.is_nan() {
-                return None;
-            }
-            Some(NaturalParams::Bernoulli { eta1 })
-        }
-        NaturalParams::Categorical { ref eta } | NaturalParams::Dirichlet { ref eta } => {
+        NaturalParams::Dirichlet { ref eta } => {
             if eta.iter().any(|v| v.is_nan()) {
                 return None;
             }
@@ -408,37 +384,6 @@ mod tests {
         assert!(
             b_eta1.abs() > 0.001,
             "node B should be influenced by coupling, eta1={b_eta1}"
-        );
-    }
-
-    #[test]
-    fn bernoulli_observation() {
-        // Bernoulli node with flat prior η=0 (p=0.5)
-        // Observe "true" → η_obs = +2 (strong positive evidence)
-        let params = NaturalParams::Bernoulli { eta1: 0.0 };
-        let node = Node {
-            name: "test".to_owned(),
-            epidemio: params.clone(),
-            prev: params.clone(),
-            relax: params.clone(),
-            post: params,
-            tau: 1.0,
-        };
-        let mut graph = Graph::new(vec![node], vec![]);
-        graph.add_observation("test".to_owned(), NaturalParams::Bernoulli { eta1: 2.0 });
-
-        let result = coordinate_ascent(&mut graph, 100, 1e-10, 1.0);
-        assert!(result.converged);
-
-        // η* = (0 + 2) / (1 + 1 + 1) = 2/3 ≈ 0.667
-        // p = sigmoid(2/3) ≈ 0.66
-        let eta = graph.nodes.first().map(|n| n.post.eta_vector());
-        let eta1 = eta.as_ref().and_then(|v| v.get(0).copied()).unwrap_or(0.0);
-        assert!((eta1 - 2.0 / 3.0).abs() < 1e-6, "eta1={eta1}, expected 2/3");
-        let prob = 1.0 / (1.0 + (-eta1).exp());
-        assert!(
-            prob > 0.55,
-            "p={prob}, should be > 0.55 after observing positive evidence"
         );
     }
 

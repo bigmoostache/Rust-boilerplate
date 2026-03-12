@@ -46,8 +46,9 @@ nodes:
     tau: 30.0
   - name: "hypertension"
     family:
-      type: bernoulli
-      p: 0.3
+      type: beta
+      alpha: 1.3
+      beta: 3.0
     tau: 365.0
   - name: "bmi"
     family:
@@ -59,12 +60,13 @@ edges:
   - node_a: blood_pressure
     node_b: hypertension
     coupling:
-      - [0.01]
-      - [0.005]
+      - [0.01, 0.0]
+      - [0.0, 0.005]
   - node_a: hypertension
     node_b: bmi
     coupling:
       - [0.1, 0.0]
+      - [0.0, 0.0]
 instruments:
   - name: bp_cuff
     node: blood_pressure
@@ -200,14 +202,14 @@ nodes:
     family: { type: gaussian, mu: 0.0, sigma2: 1.0 }
     tau: 1.0
   - name: "B"
-    family: { type: bernoulli, p: 0.5 }
+    family: { type: beta, alpha: 1.0, beta: 1.0 }
     tau: 1.0
 edges:
   - node_a: A
     node_b: B
     coupling:
-      - [1.0, 0.0]
-      - [0.0, 1.0]
+      - [1.0, 0.0, 0.0]
+      - [0.0, 1.0, 0.0]
 instruments: []
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
@@ -218,7 +220,9 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
             assert!(
                 err.errors
                     .iter()
-                    .any(|e| e.message.contains("expected 2×1"))
+                    .any(|e| e.message.contains("expected 2×2")),
+                "expected dimension mismatch error, got: {:?}",
+                err.errors
             );
         }
     }
@@ -235,8 +239,8 @@ instruments:
   - name: wrong_instrument
     node: A
     model:
-      type: bernoulli_obs
-      epsilon: 0.1
+      type: beta_obs
+      kappa: 10.0
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
@@ -277,11 +281,11 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
     }
 
     #[test]
-    fn categorical_probs_not_sum_one() {
+    fn dirichlet_invalid_alpha() {
         let yaml = r#"
 nodes:
   - name: "A"
-    family: { type: categorical, probs: [0.3, 0.3, 0.3] }
+    family: { type: dirichlet, alpha: [2.0, -1.0, 3.0] }
     tau: 1.0
 edges: []
 instruments: []
@@ -291,7 +295,11 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
         let result = parse_yaml(yaml);
         assert!(result.is_err());
         if let Err(err) = &result {
-            assert!(err.errors.iter().any(|e| e.message.contains("sum to 1")));
+            assert!(
+                err.errors
+                    .iter()
+                    .any(|e| e.message.contains("alpha must be > 0"))
+            );
         }
     }
 
@@ -364,15 +372,6 @@ nodes:
   - name: "bet"
     family: { type: beta, alpha: 2.0, beta: 5.0 }
     tau: 1.0
-  - name: "pois"
-    family: { type: poisson, lambda: 5.0 }
-    tau: 1.0
-  - name: "bern"
-    family: { type: bernoulli, p: 0.7 }
-    tau: 1.0
-  - name: "cat"
-    family: { type: categorical, probs: [0.2, 0.3, 0.5] }
-    tau: 1.0
   - name: "dir"
     family: { type: dirichlet, alpha: [2.0, 3.0, 5.0] }
     tau: 1.0
@@ -384,7 +383,7 @@ inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
         let result = parse_yaml(yaml);
         assert!(result.is_ok(), "parse failed: {:?}", result.as_ref().err());
         if let Ok(config) = result {
-            assert_eq!(config.graph.num_nodes(), 7);
+            assert_eq!(config.graph.num_nodes(), 4);
         }
     }
 
@@ -396,7 +395,7 @@ nodes:
     family: { type: gaussian, mu: 0.0, sigma2: -1.0 }
     tau: -5.0
   - name: "A"
-    family: { type: bernoulli, p: 2.0 }
+    family: { type: beta, alpha: -1.0, beta: 0.5 }
     tau: 0.0
 edges: []
 instruments: []
@@ -406,11 +405,12 @@ inference: { max_iter: 10, tolerance: -1.0, delta_t: -1.0 }
         let result = parse_yaml(yaml);
         assert!(result.is_err());
         if let Err(err) = &result {
-            // Should have: sigma2, tau, duplicate name, p, tau, tolerance, delta_t
+            // Should have: sigma2, tau, duplicate name, alpha, tau, tolerance, delta_t
             assert!(
                 err.errors.len() >= 5,
-                "expected at least 5 errors, got {}",
-                err.errors.len()
+                "expected at least 5 errors, got {}: {:?}",
+                err.errors.len(),
+                err.errors
             );
         }
     }

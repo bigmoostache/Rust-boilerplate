@@ -5,25 +5,17 @@
 //! All key quantities — expected sufficient statistics, entropy,
 //! cross-entropy, log-partition — are computed in closed form.
 
-mod bernoulli;
-mod beta;
-mod categorical;
 mod dirichlet;
 pub(crate) mod gamma;
 mod gaussian;
-mod poisson;
 
 use nalgebra::{DMatrix, DVector};
 
 use crate::schema::raw::FamilyDef;
 
-use bernoulli::Bernoulli;
-use beta::BetaDist;
-use categorical::CategoricalDist;
 use dirichlet::DirichletDist;
 use gamma::GammaDist;
 use gaussian::Gaussian;
-use poisson::PoissonDist;
 
 // ---------------------------------------------------------------------------
 // Exponential family trait — generic formulas for entropy, cross-entropy.
@@ -109,43 +101,6 @@ pub enum NaturalParams {
         eta2: f64,
     },
 
-    /// Beta with natural parameters `(η₁, η₂)`.
-    ///
-    /// - `η₁ = α − 1`  (must be > −1)
-    /// - `η₂ = β − 1`  (must be > −1)
-    /// - Sufficient statistics: `T(x) = (ln x, ln(1−x))`, dimension `d = 2`
-    Beta {
-        /// `η₁ = α − 1`
-        eta1: f64,
-        /// `η₂ = β − 1`
-        eta2: f64,
-    },
-
-    /// Poisson with natural parameter `η₁ = ln λ`.
-    ///
-    /// - Sufficient statistic: `T(x) = x`, dimension `d = 1`
-    Poisson {
-        /// `η₁ = ln λ`
-        eta1: f64,
-    },
-
-    /// Bernoulli with natural parameter `η₁ = logit(p)`.
-    ///
-    /// - Sufficient statistic: `T(x) = x`, dimension `d = 1`
-    Bernoulli {
-        /// `η₁ = logit(p) = ln(p / (1−p))`
-        eta1: f64,
-    },
-
-    /// Categorical over `K` classes, stored as `K − 1` log-ratios.
-    ///
-    /// - `η_k = ln(p_k / p_K)` for `k = 1, …, K−1`
-    /// - Sufficient statistic: `T(x) = (𝟙{x=1}, …, 𝟙{x=K−1})`, dim `d = K−1`
-    Categorical {
-        /// Log-ratios `η_k = ln(p_k / p_K)`, length `K − 1`.
-        eta: Vec<f64>,
-    },
-
     /// Dirichlet with natural parameters `η_k = α_k − 1`.
     ///
     /// The concentration parameters are `α_k = η_k + 1 > 0`.
@@ -153,6 +108,9 @@ pub enum NaturalParams {
     /// Sufficient statistics `T(x) = (ln x_1, …, ln x_K)` and the
     /// log-partition `A(η) = Σ ln Γ(η_k+1) − ln Γ(Σ(η_k+1))` give the
     /// standard exponential family structure.
+    ///
+    /// For binary variables (`K = 2`), this reduces to `Beta(α, β)`
+    /// stored as `Dirichlet([α−1, β−1])`.
     ///
     /// Dimension `d = K`.
     Dirichlet {
@@ -166,9 +124,8 @@ impl NaturalParams {
     #[must_use]
     pub const fn suff_stat_dim(&self) -> usize {
         match self {
-            Self::Gaussian { .. } | Self::Gamma { .. } | Self::Beta { .. } => 2,
-            Self::Poisson { .. } | Self::Bernoulli { .. } => 1,
-            Self::Categorical { eta } | Self::Dirichlet { eta } => eta.len(),
+            Self::Gaussian { .. } | Self::Gamma { .. } => 2,
+            Self::Dirichlet { eta } => eta.len(),
         }
     }
 
@@ -180,10 +137,6 @@ impl NaturalParams {
         match self {
             Self::Gaussian { eta1, eta2 } => gaussian::expected_suff_stats(*eta1, *eta2),
             Self::Gamma { eta1, eta2 } => gamma::expected_suff_stats(*eta1, *eta2),
-            Self::Beta { eta1, eta2 } => beta::expected_suff_stats(*eta1, *eta2),
-            Self::Poisson { eta1 } => poisson::expected_suff_stats(*eta1),
-            Self::Bernoulli { eta1 } => bernoulli::expected_suff_stats(*eta1),
-            Self::Categorical { eta } => categorical::expected_suff_stats(eta),
             Self::Dirichlet { eta } => {
                 let alpha: Vec<f64> = eta.iter().map(|&e| e + 1.0).collect();
                 dirichlet::expected_suff_stats(&alpha)
@@ -201,10 +154,6 @@ impl NaturalParams {
         match self {
             Self::Gaussian { .. } => ef_entropy::<Gaussian>(&eta),
             Self::Gamma { .. } => ef_entropy::<GammaDist>(&eta),
-            Self::Beta { .. } => ef_entropy::<BetaDist>(&eta),
-            Self::Poisson { .. } => ef_entropy::<PoissonDist>(&eta),
-            Self::Bernoulli { .. } => ef_entropy::<Bernoulli>(&eta),
-            Self::Categorical { .. } => ef_entropy::<CategoricalDist>(&eta),
             Self::Dirichlet { .. } => ef_entropy::<DirichletDist>(&eta),
         }
     }
@@ -218,10 +167,6 @@ impl NaturalParams {
         match self {
             Self::Gaussian { .. } => Gaussian::fisher_information(&eta),
             Self::Gamma { .. } => GammaDist::fisher_information(&eta),
-            Self::Beta { .. } => BetaDist::fisher_information(&eta),
-            Self::Poisson { .. } => PoissonDist::fisher_information(&eta),
-            Self::Bernoulli { .. } => Bernoulli::fisher_information(&eta),
-            Self::Categorical { .. } => CategoricalDist::fisher_information(&eta),
             Self::Dirichlet { .. } => DirichletDist::fisher_information(&eta),
         }
     }
@@ -242,30 +187,11 @@ impl NaturalParams {
                 ef_cross_entropy::<Gaussian>(&me, &oth)
             }
             (Self::Gamma { .. }, Self::Gamma { .. }) => ef_cross_entropy::<GammaDist>(&me, &oth),
-            (Self::Beta { .. }, Self::Beta { .. }) => ef_cross_entropy::<BetaDist>(&me, &oth),
-            (Self::Poisson { .. }, Self::Poisson { .. }) => {
-                ef_cross_entropy::<PoissonDist>(&me, &oth)
-            }
-            (Self::Bernoulli { .. }, Self::Bernoulli { .. }) => {
-                ef_cross_entropy::<Bernoulli>(&me, &oth)
-            }
-            (Self::Categorical { .. }, Self::Categorical { .. }) => {
-                ef_cross_entropy::<CategoricalDist>(&me, &oth)
-            }
             (Self::Dirichlet { .. }, Self::Dirichlet { .. }) => {
                 ef_cross_entropy::<DirichletDist>(&me, &oth)
             }
             // Mismatched families — return NaN (debug builds will catch this).
-            (
-                Self::Gaussian { .. }
-                | Self::Gamma { .. }
-                | Self::Beta { .. }
-                | Self::Poisson { .. }
-                | Self::Bernoulli { .. }
-                | Self::Categorical { .. }
-                | Self::Dirichlet { .. },
-                _,
-            ) => {
+            (Self::Gaussian { .. } | Self::Gamma { .. } | Self::Dirichlet { .. }, _) => {
                 debug_assert!(false, "cross-entropy requires same family");
                 f64::NAN
             }
@@ -278,10 +204,6 @@ impl NaturalParams {
         match self {
             Self::Gaussian { eta1, eta2 } => gaussian::log_partition(*eta1, *eta2),
             Self::Gamma { eta1, eta2 } => gamma::log_partition(*eta1, *eta2),
-            Self::Beta { eta1, eta2 } => beta::log_partition(*eta1, *eta2),
-            Self::Poisson { eta1 } => poisson::log_partition(*eta1),
-            Self::Bernoulli { eta1 } => bernoulli::log_partition(*eta1),
-            Self::Categorical { eta } => categorical::log_partition(eta),
             Self::Dirichlet { eta } => {
                 let alpha: Vec<f64> = eta.iter().map(|&e| e + 1.0).collect();
                 dirichlet::log_partition(&alpha)
@@ -293,11 +215,10 @@ impl NaturalParams {
     #[must_use]
     pub fn eta_vector(&self) -> DVector<f64> {
         match self {
-            Self::Gaussian { eta1, eta2 }
-            | Self::Gamma { eta1, eta2 }
-            | Self::Beta { eta1, eta2 } => DVector::from_vec(vec![*eta1, *eta2]),
-            Self::Poisson { eta1 } | Self::Bernoulli { eta1 } => DVector::from_vec(vec![*eta1]),
-            Self::Categorical { eta } | Self::Dirichlet { eta } => DVector::from_vec(eta.clone()),
+            Self::Gaussian { eta1, eta2 } | Self::Gamma { eta1, eta2 } => {
+                DVector::from_vec(vec![*eta1, *eta2])
+            }
+            Self::Dirichlet { eta } => DVector::from_vec(eta.clone()),
         }
     }
 
@@ -323,26 +244,6 @@ impl NaturalParams {
                     eta2: s * a2 + t * b2,
                 }
             }
-            (Self::Beta { eta1: a1, eta2: a2 }, Self::Beta { eta1: b1, eta2: b2 }) => Self::Beta {
-                eta1: s * a1 + t * b1,
-                eta2: s * a2 + t * b2,
-            },
-            (Self::Poisson { eta1: a }, Self::Poisson { eta1: b }) => Self::Poisson {
-                eta1: s * a + t * b,
-            },
-            (Self::Bernoulli { eta1: a }, Self::Bernoulli { eta1: b }) => Self::Bernoulli {
-                eta1: s * a + t * b,
-            },
-            (Self::Categorical { eta: a }, Self::Categorical { eta: b }) => {
-                debug_assert!(a.len() == b.len(), "categorical dimension mismatch");
-                Self::Categorical {
-                    eta: a
-                        .iter()
-                        .zip(b.iter())
-                        .map(|(ai, bi)| s.mul_add(*ai, t * bi))
-                        .collect(),
-                }
-            }
             (Self::Dirichlet { eta: a }, Self::Dirichlet { eta: b }) => {
                 debug_assert!(a.len() == b.len(), "dirichlet dimension mismatch");
                 Self::Dirichlet {
@@ -354,16 +255,7 @@ impl NaturalParams {
                 }
             }
             // Mismatched families — return self unchanged (debug builds catch this).
-            (
-                Self::Gaussian { .. }
-                | Self::Gamma { .. }
-                | Self::Beta { .. }
-                | Self::Poisson { .. }
-                | Self::Bernoulli { .. }
-                | Self::Categorical { .. }
-                | Self::Dirichlet { .. },
-                _,
-            ) => {
+            (Self::Gaussian { .. } | Self::Gamma { .. } | Self::Dirichlet { .. }, _) => {
                 debug_assert!(false, "interpolation requires same family");
                 self.clone()
             }
@@ -386,25 +278,10 @@ impl NaturalParams {
                 let (&e1, &e2) = s.first().zip(s.get(1))?;
                 (s.len() == 2).then_some(Self::Gamma { eta1: e1, eta2: e2 })
             }
-            Self::Beta { .. } => {
-                let (&e1, &e2) = s.first().zip(s.get(1))?;
-                (s.len() == 2).then_some(Self::Beta { eta1: e1, eta2: e2 })
-            }
-            Self::Poisson { .. } => {
-                let &e1 = s.first()?;
-                (s.len() == 1).then_some(Self::Poisson { eta1: e1 })
-            }
-            Self::Bernoulli { .. } => {
-                let &e1 = s.first()?;
-                (s.len() == 1).then_some(Self::Bernoulli { eta1: e1 })
-            }
-            Self::Categorical { eta: ref_eta } if s.len() == ref_eta.len() => {
-                Some(Self::Categorical { eta: s.to_vec() })
-            }
             Self::Dirichlet { eta: ref_eta } if s.len() == ref_eta.len() => {
                 Some(Self::Dirichlet { eta: s.to_vec() })
             }
-            Self::Categorical { .. } | Self::Dirichlet { .. } => None,
+            Self::Dirichlet { .. } => None,
         }
     }
 
@@ -425,33 +302,21 @@ impl NaturalParams {
                 alpha: eta1 + 1.0,
                 beta: -eta2,
             },
-            Self::Beta { eta1, eta2 } => FamilyDef::Beta {
-                alpha: eta1 + 1.0,
-                beta: eta2 + 1.0,
-            },
-            Self::Poisson { eta1 } => FamilyDef::Poisson { lambda: eta1.exp() },
-            Self::Bernoulli { eta1 } => {
-                let p = if *eta1 >= 0.0 {
-                    1.0 / (1.0 + (-eta1).exp())
+            Self::Dirichlet { eta } => {
+                // K=2 → output as Beta sugar for readability.
+                if eta.len() == 2
+                    && let (Some(&e1), Some(&e2)) = (eta.first(), eta.get(1))
+                {
+                    FamilyDef::Beta {
+                        alpha: e1 + 1.0,
+                        beta: e2 + 1.0,
+                    }
                 } else {
-                    let e = eta1.exp();
-                    e / (1.0 + e)
-                };
-                FamilyDef::Bernoulli { p }
+                    FamilyDef::Dirichlet {
+                        alpha: eta.iter().map(|&e| e + 1.0).collect(),
+                    }
+                }
             }
-            Self::Categorical { eta } => {
-                // Recover probabilities from log-ratios via softmax
-                let max_eta = eta.iter().copied().fold(0.0_f64, f64::max);
-                let sum_exp: f64 =
-                    eta.iter().map(|&e| (e - max_eta).exp()).sum::<f64>() + (-max_eta).exp();
-                let log_z = max_eta + sum_exp.ln();
-                let mut probs: Vec<f64> = eta.iter().map(|&e| (e - log_z).exp()).collect();
-                probs.push((-log_z).exp());
-                FamilyDef::Categorical { probs }
-            }
-            Self::Dirichlet { eta } => FamilyDef::Dirichlet {
-                alpha: eta.iter().map(|&e| e + 1.0).collect(),
-            },
         }
     }
 }
