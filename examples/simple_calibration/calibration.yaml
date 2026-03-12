@@ -1,0 +1,89 @@
+# Simple calibration example — coupling matrices
+#
+# Each edge block declares three calibration statements:
+#   1. no_effect at x_b = [0, 1]  — no coupling when the disease is absent
+#   2. variance/concentration_unchanged — shape parameter stays fixed
+#   3. conditional_mean — target mean when the disease is (nearly) certain
+#
+# The calibration system solves for the coupling matrix B analytically.
+# See Calibration-locale.md for the mathematical derivation.
+
+calibration:
+
+# ── temperature ← flu ──────────────────────────────────────────
+# "When flu = 0.99, expected temperature is 39.5°C"
+
+  - edge: [temperature, flu]
+    statements:
+      - type: no_effect
+        x_b: [0.0, 1.0]
+      - type: variance_unchanged
+        x_b: [0.99, 0.01]
+      - type: conditional_mean
+        x_b: [0.99, 0.01]
+        target_mean: 39.5
+
+# ── temperature ← tonsillitis ─────────────────────────────────
+# "When tonsillitis = 0.99, expected temperature is 38.5°C"
+
+  - edge: [temperature, tonsillitis]
+    statements:
+      - type: no_effect
+        x_b: [0.0, 1.0]
+      - type: variance_unchanged
+        x_b: [0.99, 0.01]
+      - type: conditional_mean
+        x_b: [0.99, 0.01]
+        target_mean: 38.5
+
+# ── headache ← flu ─────────────────────────────────────────────
+# "When flu = 0.9, expected headache probability is 0.60"
+
+  - edge: [headache, flu]
+    statements:
+      - type: no_effect
+        x_b: [0.0, 1.0]
+      - type: concentration_unchanged
+        x_b: [0.9, 0.1]
+      - type: conditional_mean
+        x_b: [0.9, 0.1]
+        target_mean: 0.60
+
+# ── headache ← tonsillitis ────────────────────────────────────
+# "When tonsillitis = 0.9, expected headache probability is 0.20"
+
+  - edge: [headache, tonsillitis]
+    statements:
+      - type: no_effect
+        x_b: [0.0, 1.0]
+      - type: concentration_unchanged
+        x_b: [0.9, 0.1]
+      - type: conditional_mean
+        x_b: [0.9, 0.1]
+        target_mean: 0.20
+
+# ── sore_throat ← tonsillitis ─────────────────────────────────
+# "When tonsillitis = 0.9, expected sore_throat probability is 0.80"
+
+  - edge: [sore_throat, tonsillitis]
+    statements:
+      - type: no_effect
+        x_b: [0.0, 1.0]
+      - type: concentration_unchanged
+        x_b: [0.9, 0.1]
+      - type: conditional_mean
+        x_b: [0.9, 0.1]
+        target_mean: 0.80
+
+# ── sore_throat ← flu ─────────────────────────────────────────
+# "When flu = 0.9, expected sore_throat probability is 0.10"
+
+  - edge: [sore_throat, flu]
+    statements:
+      - type: no_effect
+        x_b: [0.0, 1.0]
+      - type: concentration_unchanged
+        x_b: [0.9, 0.1]
+      - type: conditional_mean
+        x_b: [0.9, 0.1]
+        target_mean: 0.10
