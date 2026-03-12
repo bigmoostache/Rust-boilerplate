@@ -239,7 +239,7 @@ fn spectral_norm(m: &DMatrix<f64>) -> f64 {
 /// Domain constraints:
 /// - Gaussian: `η₂ < 0` (clamp to `−ε`)
 /// - Gamma: `η₁ > −1`, `η₂ < 0`
-/// - Dirichlet: no per-component constraint
+/// - Dirichlet: `η_k > −1` (clamp each component to `−1 + ε`)
 fn clamp_natural_params(params: NaturalParams) -> Option<NaturalParams> {
     match params {
         NaturalParams::Gaussian { eta1, eta2 } => {
@@ -260,11 +260,16 @@ fn clamp_natural_params(params: NaturalParams) -> Option<NaturalParams> {
                 eta2: eta2.min(-NATURAL_PARAM_EPS),
             })
         }
-        NaturalParams::Dirichlet { ref eta } => {
+        NaturalParams::Dirichlet { eta } => {
             if eta.iter().any(|v| v.is_nan()) {
                 return None;
             }
-            Some(params)
+            // Clamp η_k > −1 + ε so that α_k = η_k + 1 > ε > 0.
+            let clamped: Vec<f64> = eta
+                .iter()
+                .map(|&e| e.max(-1.0 + NATURAL_PARAM_EPS))
+                .collect();
+            Some(NaturalParams::Dirichlet { eta: clamped })
         }
     }
 }

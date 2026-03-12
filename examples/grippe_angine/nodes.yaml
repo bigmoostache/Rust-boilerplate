@@ -1,93 +1,90 @@
 # Grippe vs. Angine — node definitions
 #
-# Clinical variables (symptoms) and disease variables
-# shared across all patients.
+# CALIBRATION NOTES:
 #
-# Disease→symptom edges are declared inline on disease nodes.
-# This keeps the causal structure visible next to the disease definition.
+# Symptom priors are weak (strength ≈ 10–20) — a single observation
+# (κ=20) dominates.
+#
+# Disease priors use moderate strength (α+β = 10) to resist
+# oscillation in the undirected MRF feedback loops, while still
+# being movable by strong symptom evidence via coupling.
+#
+# Coupling values in 0.15–0.25 for Beta↔Beta, ~0.005 for
+# Beta↔Gaussian (temperature).
 
 nodes:
-  # -- Clinical variables (symptoms) --
+  # ── Symptom nodes ──────────────────────────────────────────────
+
   - name: "temperature"
     family:
       type: gaussian
-      mu: 37.0
-      sigma2: 0.25
+      mu: 37.0        # normal body temperature
+      sigma2: 0.25    # prior σ = 0.5°C
     tau: 7.0
 
   - name: "headache"
     family:
       type: beta
       alpha: 1.0
-      beta: 9.0
+      beta: 9.0        # mean=0.10, strength=10
     tau: 3.0
 
   - name: "sore_throat"
     family:
       type: beta
       alpha: 1.0
-      beta: 19.0
+      beta: 19.0       # mean=0.05, strength=20
     tau: 5.0
 
   - name: "body_aches"
     family:
       type: beta
       alpha: 1.0
-      beta: 19.0
+      beta: 19.0       # mean=0.05, strength=20
     tau: 3.0
 
-  # -- Disease variables --
-  # Priors reflect clinical setting: patients presenting with symptoms
-  # have higher a priori disease probability than the general population.
+  # ── Disease nodes ──────────────────────────────────────────────
 
   - name: "flu"
     family:
       type: beta
-      alpha: 2.5
-      beta: 7.5
+      alpha: 2.5       # mean=0.25, strength=10
+      beta: 7.5        # moderate strength resists oscillation
     tau: 14.0
     coupled_with:
-      # flu → temperature (2×2): moderate-to-high fever
-      # Small coupling: Beta E[T] ≈ (-3, -0.1) vs Gaussian E[T] ≈ (37, 1370)
       - node: temperature
         coupling:
           - [0.005, 0.0]
           - [0.0, 0.0]
-      # flu → headache (2×2): common with flu
       - node: headache
         coupling:
-          - [0.15, 0.0]
+          - [0.25, 0.0]
           - [0.0, 0.0]
-      # flu → body_aches (2×2): hallmark symptom
       - node: body_aches
         coupling:
-          - [0.2, 0.0]
+          - [0.25, 0.0]
           - [0.0, 0.0]
-      # flu ↔ tonsillitis (2×2): soft mutual exclusion
       - node: tonsillitis
         coupling:
-          - [-0.05, 0.0]
+          - [-0.10, 0.0]
           - [0.0, 0.0]
 
   - name: "tonsillitis"
     family:
       type: beta
-      alpha: 2.5
-      beta: 7.5
+      alpha: 2.5       # mean=0.25, strength=10
+      beta: 7.5        # moderate strength resists oscillation
     tau: 10.0
     coupled_with:
-      # tonsillitis → temperature (2×2): mild-to-moderate fever
       - node: temperature
         coupling:
           - [0.004, 0.0]
           - [0.0, 0.0]
-      # tonsillitis → sore_throat (2×2): hallmark symptom
       - node: sore_throat
         coupling:
           - [0.25, 0.0]
           - [0.0, 0.0]
-      # tonsillitis → headache (2×2): mild referred pain
       - node: headache
         coupling:
-          - [0.05, 0.0]
+          - [0.10, 0.0]
           - [0.0, 0.0]

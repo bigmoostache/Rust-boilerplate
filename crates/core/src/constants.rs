@@ -18,7 +18,7 @@
 /// **Trade-off**: values above the theoretical `α` may cause mild
 /// oscillation in strongly coupled graphs, but the clamping in
 /// [`super::inference::clamp_natural_params`] prevents divergence.
-pub const MIN_ALPHA: f64 = 0.01;
+pub const MIN_ALPHA: f64 = 0.05;
 
 /// Minimum distance from the domain boundary when clamping natural
 /// parameters.

@@ -29,16 +29,16 @@ instruments:
     node: headache
     model:
       type: beta_obs
-      kappa: 20.0
+      kappa: 50.0
 
   - name: questionnaire_gorge
     node: sore_throat
     model:
       type: beta_obs
-      kappa: 20.0
+      kappa: 50.0
 
   - name: questionnaire_courbatures
     node: body_aches
     model:
       type: beta_obs
-      kappa: 20.0
+      kappa: 50.0
