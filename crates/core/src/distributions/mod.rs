@@ -14,18 +14,20 @@ pub(crate) mod gamma;
 mod gaussian;
 mod poisson;
 
-use nalgebra::DVector;
+use nalgebra::{DMatrix, DVector};
 
 use crate::schema::raw::FamilyDef;
 
-use exp_family::{cross_entropy as ef_cross_entropy, entropy as ef_entropy};
-use gaussian::Gaussian;
-use gamma::GammaDist;
-use beta::BetaDist;
-use poisson::PoissonDist;
 use bernoulli::Bernoulli;
+use beta::BetaDist;
 use categorical::CategoricalDist;
 use dirichlet::DirichletDist;
+use exp_family::{
+    ExponentialFamily as _, cross_entropy as ef_cross_entropy, entropy as ef_entropy,
+};
+use gamma::GammaDist;
+use gaussian::Gaussian;
+use poisson::PoissonDist;
 
 /// Natural parameters for the seven supported exponential families.
 ///
@@ -158,6 +160,23 @@ impl NaturalParams {
         }
     }
 
+    /// Fisher information matrix `F(η) = ∇²A(η) = Cov_η[T(x)]`.
+    ///
+    /// Returns a `d × d` matrix where `d = suff_stat_dim()`.
+    #[must_use]
+    pub fn fisher_information(&self) -> DMatrix<f64> {
+        let eta = self.eta_vector();
+        match self {
+            Self::Gaussian { .. } => Gaussian::fisher_information(&eta),
+            Self::Gamma { .. } => GammaDist::fisher_information(&eta),
+            Self::Beta { .. } => BetaDist::fisher_information(&eta),
+            Self::Poisson { .. } => PoissonDist::fisher_information(&eta),
+            Self::Bernoulli { .. } => Bernoulli::fisher_information(&eta),
+            Self::Categorical { .. } => CategoricalDist::fisher_information(&eta),
+            Self::Dirichlet { .. } => DirichletDist::fisher_information(&eta),
+        }
+    }
+
     /// Cross-entropy `E_self[ln p_other(x)]` where both distributions
     /// belong to the **same** family.
     ///
@@ -173,12 +192,8 @@ impl NaturalParams {
             (Self::Gaussian { .. }, Self::Gaussian { .. }) => {
                 ef_cross_entropy::<Gaussian>(&me, &oth)
             }
-            (Self::Gamma { .. }, Self::Gamma { .. }) => {
-                ef_cross_entropy::<GammaDist>(&me, &oth)
-            }
-            (Self::Beta { .. }, Self::Beta { .. }) => {
-                ef_cross_entropy::<BetaDist>(&me, &oth)
-            }
+            (Self::Gamma { .. }, Self::Gamma { .. }) => ef_cross_entropy::<GammaDist>(&me, &oth),
+            (Self::Beta { .. }, Self::Beta { .. }) => ef_cross_entropy::<BetaDist>(&me, &oth),
             (Self::Poisson { .. }, Self::Poisson { .. }) => {
                 ef_cross_entropy::<PoissonDist>(&me, &oth)
             }
@@ -233,9 +248,7 @@ impl NaturalParams {
             | Self::Gamma { eta1, eta2 }
             | Self::Beta { eta1, eta2 } => DVector::from_vec(vec![*eta1, *eta2]),
             Self::Poisson { eta1 } | Self::Bernoulli { eta1 } => DVector::from_vec(vec![*eta1]),
-            Self::Categorical { eta } | Self::Dirichlet { eta } => {
-                DVector::from_vec(eta.clone())
-            }
+            Self::Categorical { eta } | Self::Dirichlet { eta } => DVector::from_vec(eta.clone()),
         }
     }
 

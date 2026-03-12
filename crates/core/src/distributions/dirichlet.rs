@@ -9,9 +9,9 @@
 //! Base measure: `h(x) = 1_{x ∈ simplex}` — since it doesn't depend
 //! on `η`, `E[ln h(x)] = 0`.
 
-use nalgebra::DVector;
+use nalgebra::{DMatrix, DVector};
 
-use super::gamma::{digamma, lgamma};
+use super::gamma::{digamma, lgamma, trigamma};
 
 use super::exp_family::ExponentialFamily;
 
@@ -27,6 +27,23 @@ impl ExponentialFamily for DirichletDist {
     fn expected_suff_stats(eta: &DVector<f64>) -> DVector<f64> {
         let alpha: Vec<f64> = eta.iter().map(|&e| e + 1.0).collect();
         expected_suff_stats(&alpha)
+    }
+
+    /// `∇²A(η)` for Dirichlet:
+    /// - diagonal: `ψ'(α_k) − ψ'(Σα)`
+    /// - off-diagonal: `−ψ'(Σα)`
+    fn fisher_information(eta: &DVector<f64>) -> DMatrix<f64> {
+        let alpha: Vec<f64> = eta.iter().map(|&e| e + 1.0).collect();
+        let alpha_sum: f64 = alpha.iter().sum();
+        let tri_sum = trigamma(alpha_sum);
+        let k = eta.len();
+        let mut f = DMatrix::from_element(k, k, -tri_sum);
+        for i in 0..k {
+            if let (Some(cell), Some(&ai)) = (f.get_mut((i, i)), alpha.get(i)) {
+                *cell = trigamma(ai) - tri_sum;
+            }
+        }
+        f
     }
 
     fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
@@ -51,8 +68,8 @@ pub(super) fn log_partition(alpha: &[f64]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
+    use super::*;
 
     /// Reference: Dirichlet(α = (2, 3, 5)) → η = (1, 2, 4).
     const ALPHA: [f64; 3] = [2.0, 3.0, 5.0];

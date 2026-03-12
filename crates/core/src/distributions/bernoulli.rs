@@ -4,7 +4,7 @@
 //! Sufficient statistic: `T(x) = x`.
 //! Log-partition: `A(η) = ln(1 + exp(η₁))`.
 
-use nalgebra::DVector;
+use nalgebra::{DMatrix, DVector};
 
 use super::exp_family::ExponentialFamily;
 
@@ -20,6 +20,13 @@ impl ExponentialFamily for Bernoulli {
     fn expected_suff_stats(eta: &DVector<f64>) -> DVector<f64> {
         let e1 = eta.get(0).copied().unwrap_or(0.0);
         expected_suff_stats(e1)
+    }
+
+    /// `Var[x] = p(1 − p)`.
+    fn fisher_information(eta: &DVector<f64>) -> DMatrix<f64> {
+        let e1 = eta.get(0).copied().unwrap_or(0.0);
+        let p = canonical(e1);
+        DMatrix::from_row_slice(1, 1, &[p * (1.0 - p)])
     }
 
     fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
@@ -56,8 +63,8 @@ pub(super) fn log_partition(eta1: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
+    use super::*;
 
     /// Reference: Bernoulli(p=0.7) → η₁ = logit(0.7) = ln(7/3).
     const ETA1: f64 = 0.847_297_860_387_203_8; // ln(7/3)

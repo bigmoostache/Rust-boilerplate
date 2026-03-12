@@ -4,7 +4,7 @@
 //! Sufficient statistics: `T(x) = (x, x²)`.
 //! Log-partition: `A(η) = −η₁²/(4η₂) + ½ ln(−π/η₂)`.
 
-use nalgebra::DVector;
+use nalgebra::{DMatrix, DVector};
 
 use super::exp_family::ExponentialFamily;
 
@@ -22,6 +22,19 @@ impl ExponentialFamily for Gaussian {
         let e1 = eta.get(0).copied().unwrap_or(0.0);
         let e2 = eta.get(1).copied().unwrap_or(-0.5);
         expected_suff_stats(e1, e2)
+    }
+
+    /// `F = Cov[(x, x²)]`:
+    /// - `Var[x] = σ²`
+    /// - `Cov[x, x²] = 2μσ²`
+    /// - `Var[x²] = 2σ⁴ + 4μ²σ²`
+    fn fisher_information(eta: &DVector<f64>) -> DMatrix<f64> {
+        let e1 = eta.get(0).copied().unwrap_or(0.0);
+        let e2 = eta.get(1).copied().unwrap_or(-0.5);
+        let (mu, sigma2) = canonical(e1, e2);
+        let cov_x_x2 = 2.0 * mu * sigma2;
+        let var_x2 = (2.0f64).mul_add(sigma2 * sigma2, 4.0 * mu * mu * sigma2);
+        DMatrix::from_row_slice(2, 2, &[sigma2, cov_x_x2, cov_x_x2, var_x2])
     }
 
     fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
@@ -50,8 +63,8 @@ pub(super) fn log_partition(eta1: f64, eta2: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
+    use super::*;
 
     /// Reference: N(3, 4) → μ=3, σ²=4, η₁ = 0.75, η₂ = −0.125.
     const ETA1: f64 = 0.75;

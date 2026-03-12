@@ -4,10 +4,10 @@
 //! Sufficient statistics: `T(x) = (ln x, ln(1−x))`.
 //! Log-partition: `A(η) = ln Γ(η₁+1) + ln Γ(η₂+1) − ln Γ(η₁+η₂+2)`.
 
-use nalgebra::DVector;
+use nalgebra::{DMatrix, DVector};
 
 // Re-use lgamma and digamma from the gamma module.
-use super::gamma::{digamma, lgamma};
+use super::gamma::{digamma, lgamma, trigamma};
 
 use super::exp_family::ExponentialFamily;
 
@@ -25,6 +25,21 @@ impl ExponentialFamily for BetaDist {
         let e1 = eta.get(0).copied().unwrap_or(0.0);
         let e2 = eta.get(1).copied().unwrap_or(0.0);
         expected_suff_stats(e1, e2)
+    }
+
+    /// `∇²A(η)` for Beta:
+    /// - `∂²A/∂η₁² = ψ'(α) − ψ'(α+β)`
+    /// - `∂²A/∂η₁∂η₂ = −ψ'(α+β)`
+    /// - `∂²A/∂η₂² = ψ'(β) − ψ'(α+β)`
+    fn fisher_information(eta: &DVector<f64>) -> DMatrix<f64> {
+        let e1 = eta.get(0).copied().unwrap_or(0.0);
+        let e2 = eta.get(1).copied().unwrap_or(0.0);
+        let (alpha, beta) = canonical(e1, e2);
+        let tri_sum = trigamma(alpha + beta);
+        let f00 = trigamma(alpha) - tri_sum;
+        let f01 = -tri_sum;
+        let f11 = trigamma(beta) - tri_sum;
+        DMatrix::from_row_slice(2, 2, &[f00, f01, f01, f11])
     }
 
     fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
@@ -54,8 +69,8 @@ pub(super) fn log_partition(eta1: f64, eta2: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
+    use super::*;
 
     /// Reference: Beta(α=2, β=5) → η₁=1, η₂=4.
     const ETA1: f64 = 1.0;

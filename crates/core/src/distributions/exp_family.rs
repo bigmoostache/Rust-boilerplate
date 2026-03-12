@@ -21,7 +21,7 @@
 //! and (for Poisson/Dirichlet) `expected_log_base_measure`.  Everything
 //! else is derived.
 
-use nalgebra::DVector;
+use nalgebra::{DMatrix, DVector};
 
 /// Trait for exponential family distributions.
 ///
@@ -33,6 +33,13 @@ pub(crate) trait ExponentialFamily {
 
     /// Expected sufficient statistics `E_η[T(x)] = ∇A(η)`.
     fn expected_suff_stats(eta: &DVector<f64>) -> DVector<f64>;
+
+    /// Fisher information matrix `F(η) = ∇²A(η) = Cov_η[T(x)]`.
+    ///
+    /// This is the Hessian of the log-partition function, which equals
+    /// the covariance matrix of the sufficient statistics.
+    /// Each family provides its own closed-form implementation.
+    fn fisher_information(eta: &DVector<f64>) -> DMatrix<f64>;
 
     /// Expected log-base-measure `E_η[ln h(x)]`.
     ///
@@ -61,10 +68,7 @@ pub(crate) fn entropy<F: ExponentialFamily>(eta: &DVector<f64>) -> f64 {
 /// ```text
 /// E_me[ln p_other] = E_me[ln h(x)] + η_other · E_me[T(x)] − A(η_other)
 /// ```
-pub(crate) fn cross_entropy<F: ExponentialFamily>(
-    me: &DVector<f64>,
-    other: &DVector<f64>,
-) -> f64 {
+pub(crate) fn cross_entropy<F: ExponentialFamily>(me: &DVector<f64>, other: &DVector<f64>) -> f64 {
     F::expected_log_base_measure(me) + other.dot(&F::expected_suff_stats(me))
         - F::log_partition(other)
 }

@@ -4,7 +4,7 @@
 //! Sufficient statistics: `T(x) = (ln x, x)`.
 //! Log-partition: `A(η) = ln Γ(η₁ + 1) − (η₁ + 1) ln(−η₂)`.
 
-use nalgebra::DVector;
+use nalgebra::{DMatrix, DVector};
 
 use super::exp_family::ExponentialFamily;
 
@@ -22,6 +22,20 @@ impl ExponentialFamily for GammaDist {
         let e1 = eta.get(0).copied().unwrap_or(0.0);
         let e2 = eta.get(1).copied().unwrap_or(-1.0);
         expected_suff_stats(e1, e2)
+    }
+
+    /// `F = Cov[(ln x, x)]`:
+    /// - `Var[ln x] = ψ'(α)`
+    /// - `Cov[ln x, x] = 1/β`
+    /// - `Var[x] = α/β²`
+    fn fisher_information(eta: &DVector<f64>) -> DMatrix<f64> {
+        let e1 = eta.get(0).copied().unwrap_or(0.0);
+        let e2 = eta.get(1).copied().unwrap_or(-1.0);
+        let (alpha, beta) = canonical(e1, e2);
+        let var_lnx = trigamma(alpha);
+        let cov_lnx_x = 1.0 / beta;
+        let var_x = alpha / (beta * beta);
+        DMatrix::from_row_slice(2, 2, &[var_lnx, cov_lnx_x, cov_lnx_x, var_x])
     }
 
     fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
@@ -59,6 +73,32 @@ pub(crate) fn digamma(x: f64) -> f64 {
         - 0.5 / z
         - z2 * (1.0 / 12.0
             - z2 * (1.0 / 120.0 - z2 * (1.0 / 252.0 - z2 * (1.0 / 240.0 - z2 / 132.0))));
+    result
+}
+
+/// Trigamma function `ψ'(x) = d²/dx² ln Γ(x)`.
+///
+/// Uses the asymptotic series with argument reduction.
+pub(crate) fn trigamma(x: f64) -> f64 {
+    let mut result = 0.0;
+    let mut z = x;
+    // Recurrence: ψ'(x) = ψ'(x+1) + 1/x²
+    for _ in 0..8_u32 {
+        if z >= 8.0 {
+            break;
+        }
+        result += 1.0 / (z * z);
+        z += 1.0;
+    }
+    // Asymptotic expansion: ψ'(z) = 1/z + 1/(2z²) + 1/(6z³) − …
+    let iz = 1.0 / z;
+    let iz2 = iz * iz;
+    result += iz
+        + iz2 * 0.5
+        + (iz2 * iz).mul_add(
+            1.0 / 6.0 - iz2 * (1.0 / 30.0 - iz2 * (1.0 / 42.0 - iz2 * (1.0 / 30.0 - iz2 / 22.0))),
+            0.0,
+        );
     result
 }
 
@@ -110,8 +150,8 @@ pub(crate) fn lgamma(x: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
+    use super::*;
 
     /// Reference: Gamma(α=3, β=2) → η₁=2, η₂=−2.
     const ETA1: f64 = 2.0;

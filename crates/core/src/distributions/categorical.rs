@@ -6,7 +6,7 @@
 //!
 //! The reference class `K` has implicit `η_K = 0`.
 
-use nalgebra::DVector;
+use nalgebra::{DMatrix, DVector};
 
 use super::exp_family::ExponentialFamily;
 
@@ -20,6 +20,27 @@ impl ExponentialFamily for CategoricalDist {
 
     fn expected_suff_stats(eta: &DVector<f64>) -> DVector<f64> {
         expected_suff_stats(eta.as_slice())
+    }
+
+    /// `F = diag(p) − p · pᵀ` (K−1 × K−1).
+    ///
+    /// This is the covariance matrix of the indicator vector
+    /// `(𝟙{x=1}, …, 𝟙{x=K−1})`.
+    fn fisher_information(eta: &DVector<f64>) -> DMatrix<f64> {
+        let probs = probabilities(eta.as_slice());
+        let km1 = eta.len();
+        let mut f = DMatrix::zeros(km1, km1);
+        for i in 0..km1 {
+            let pi = probs.get(i).copied().unwrap_or(0.0);
+            for j in 0..km1 {
+                let pj = probs.get(j).copied().unwrap_or(0.0);
+                let val = if i == j { pi - pi * pj } else { -pi * pj };
+                if let Some(cell) = f.get_mut((i, j)) {
+                    *cell = val;
+                }
+            }
+        }
+        f
     }
 
     fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
@@ -59,8 +80,8 @@ pub(super) fn log_partition(eta: &[f64]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
+    use super::*;
 
     /// Reference: Cat(K=3) with p = (0.2, 0.3, 0.5).
     /// η₁ = ln(0.2/0.5) = ln(0.4), η₂ = ln(0.3/0.5) = ln(0.6).

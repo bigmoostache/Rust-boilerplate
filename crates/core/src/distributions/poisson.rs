@@ -9,7 +9,7 @@
 //! `H ≈ ½ ln(2πeλ) − 1/(12λ) − 1/(24λ²) − …` for `λ ≥ 1`,
 //! and exact summation for small `λ`.
 
-use nalgebra::DVector;
+use nalgebra::{DMatrix, DVector};
 
 use super::exp_family::ExponentialFamily;
 
@@ -25,6 +25,12 @@ impl ExponentialFamily for PoissonDist {
     fn expected_suff_stats(eta: &DVector<f64>) -> DVector<f64> {
         let e1 = eta.get(0).copied().unwrap_or(0.0);
         expected_suff_stats(e1)
+    }
+
+    /// `Var[x] = λ = e^{η₁}`.
+    fn fisher_information(eta: &DVector<f64>) -> DMatrix<f64> {
+        let e1 = eta.get(0).copied().unwrap_or(0.0);
+        DMatrix::from_row_slice(1, 1, &[canonical(e1)])
     }
 
     /// `E_η[ln h(x)] = −E_η[ln(x!)]`.
@@ -88,8 +94,8 @@ pub(super) fn log_partition(eta1: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::exp_family::{cross_entropy as ef_ce, entropy as ef_h};
+    use super::*;
 
     /// Reference: Poisson(λ=5) → η₁ = ln 5.
     const ETA1: f64 = 1.609_437_912_434_100_4; // ln(5)
