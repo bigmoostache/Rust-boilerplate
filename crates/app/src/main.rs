@@ -257,18 +257,34 @@ fn run_infer(
     }
 
     // Build table rows: (name, family, param1, param2)
-    let rows: Vec<(String, String, String, String)> = inference_result
-        .posteriors
-        .iter()
-        .map(posterior_columns)
-        .collect();
+    // Include both posteriors and their observations for column width.
+    let mut rows: Vec<(String, String, String, String)> = Vec::new();
+    // obs_rows[i] = list of observation rows to print under rows[i]
+    let mut obs_rows: Vec<Vec<(String, String, String, String)>> = Vec::new();
 
-    // Compute column widths
-    let w_name = rows.iter().map(|r| r.0.len()).max().unwrap_or(0);
-    let w_family = rows.iter().map(|r| r.1.len()).max().unwrap_or(0);
-    let w_p1 = rows.iter().map(|r| r.2.len()).max().unwrap_or(0);
+    for p in &inference_result.posteriors {
+        rows.push(posterior_columns(p));
+        let mut node_obs = Vec::new();
+        if let Some(obs_list) = obs_by_node.get(p.name.as_str()) {
+            for obs in obs_list {
+                let obs_posterior = app_core::schema::output::NodePosterior {
+                    name: obs.instrument.clone(),
+                    family: obs.eta_obs.to_canonical(),
+                    natural_params: obs.eta_obs.eta_vector().as_slice().to_vec(),
+                };
+                node_obs.push(posterior_columns(&obs_posterior));
+            }
+        }
+        obs_rows.push(node_obs);
+    }
 
-    for (name, family, p1, p2) in &rows {
+    // Compute column widths across ALL rows (posteriors + observations)
+    let all_iter = rows.iter().chain(obs_rows.iter().flatten());
+    let w_name = all_iter.clone().map(|r| r.0.len()).max().unwrap_or(0);
+    let w_family = all_iter.clone().map(|r| r.1.len()).max().unwrap_or(0);
+    let w_p1 = all_iter.map(|r| r.2.len()).max().unwrap_or(0);
+
+    for (i, (name, family, p1, p2)) in rows.iter().enumerate() {
         if p2.is_empty() {
             let _r = writeln!(
                 stdout,
@@ -281,25 +297,17 @@ fn run_infer(
             );
         }
         // Show observations for this node in purple
-        if let Some(obs_list) = obs_by_node.get(name.as_str()) {
-            for obs in obs_list {
-                let obs_posterior = app_core::schema::output::NodePosterior {
-                    name: obs.instrument.clone(),
-                    family: obs.eta_obs.to_canonical(),
-                    natural_params: obs.eta_obs.eta_vector().as_slice().to_vec(),
-                };
-                let (_, obs_family, obs_p1, obs_p2) = posterior_columns(&obs_posterior);
+        if let Some(node_obs) = obs_rows.get(i) {
+            for (obs_name, obs_family, obs_p1, obs_p2) in node_obs {
                 if obs_p2.is_empty() {
                     let _r = writeln!(
                         stdout,
-                        "  \x1b[35m{:<w_name$}  {obs_family:<w_family$}  {obs_p1:>w_p1$}\x1b[0m",
-                        obs.instrument,
+                        "  \x1b[35m{obs_name:<w_name$}  {obs_family:<w_family$}  {obs_p1:>w_p1$}\x1b[0m",
                     );
                 } else {
                     let _r = writeln!(
                         stdout,
-                        "  \x1b[35m{:<w_name$}  {obs_family:<w_family$}  {obs_p1:>w_p1$}  {obs_p2}\x1b[0m",
-                        obs.instrument,
+                        "  \x1b[35m{obs_name:<w_name$}  {obs_family:<w_family$}  {obs_p1:>w_p1$}  {obs_p2}\x1b[0m",
                     );
                 }
             }
