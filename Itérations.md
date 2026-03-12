@@ -145,44 +145,98 @@ L'erreur décroît géométriquement à taux $(1-\alpha)$ **indépendamment de l
 
 ---
 
-### Choix optimal de $\alpha$
+## Calcul propre du jacobien pour le choix de $\alpha_i$
 
-La condition de convergence de Jacobi avec damping devient :
+### Setup
 
-$$(1 - \alpha) + \alpha \cdot \rho(C) < 1$$
+On repart du gradient naturel annulé (point fixe de $\mathcal{F}$) :
 
-où $\rho(C)$ est le rayon spectral de la matrice de couplage normalisée. Ce qui donne :
+$$\sum_{j \in \mathcal{N}(i)} B_{ij} \, \mathbb{E}_j[T_j] + \eta_i^{\text{relax}} + \sum_k \eta_k^{\text{obs}} - (2 + |\mathcal{O}_i|)\,\eta_i^{\text{post}} = 0$$
 
-$$\alpha < \frac{1}{1 - \rho(C)} \quad \text{si } \rho(C) < 1$$
+Ce qui donne :
 
-En pratique $\rho(C)$ est difficile à calculer sur un grand graphe. Une heuristique robuste :
-
-$$\alpha_i = \frac{1}{1 + |\mathcal{O}_i| + \sum_j \|B_{ij}\|}$$
-
-C'est le dénominateur du point fixe normalisé — plus le nœud est "tiré" de partout, plus $\alpha_i$ est petit.
+$$\eta_i^* = \frac{\eta_i^{\text{relax}} + \sum_k \eta_k^{\text{obs}} + \sum_{j \in \mathcal{N}(i)} B_{ij} \, \mathbb{E}_j[T_j]}{2 + |\mathcal{O}_i|}$$
 
 ---
 
-### Variante : $\alpha$ adaptatif par nœud
+### Jacobien $J_{ij} = \partial \eta_i^* / \partial \eta_j$
 
-On peut détecter les oscillations localement en regardant le signe du changement :
+Le seul terme qui dépend de $\eta_j$ est $\mathbb{E}_j[T_j] = \nabla_{\eta_j} A_j(\eta_j)$. Donc :
 
-$$\delta_i^t = \eta_i^t - \eta_i^{t-1}$$
+$$J_{ij} = \frac{1}{2 + |\mathcal{O}_i|} \cdot B_{ij} \cdot \frac{\partial \mathbb{E}_j[T_j]}{\partial \eta_j} = \frac{B_{ij} \, \Lambda_j}{2 + |\mathcal{O}_i|}$$
 
-Si $\delta_i^t \cdot \delta_i^{t-1} < 0$ — le nœud a changé de direction — on réduit $\alpha_i$. Si la direction est stable plusieurs itérations, on peut augmenter $\alpha_i$ prudemment. C'est l'esprit de **ADADAMP**, analogue aux schedulers adaptatifs en deep learning.
+avec $\Lambda_j = \nabla^2_{\eta_j} A_j(\eta_j) \in \mathbb{R}^{d_j \times d_j}$ la matrice de Fisher de $j$, définie positive.
+
+**Dimensions :** $B_{ij} \in \mathbb{R}^{d_i \times d_j}$, $\Lambda_j \in \mathbb{R}^{d_j \times d_j}$, donc $J_{ij} \in \mathbb{R}^{d_i \times d_j}$. ✓
 
 ---
 
-### Lien avec le gradient naturel
+### Dynamique linéarisée
 
-L'update géométrique a une lecture élégante dans le cadre variationnel. Un pas de **gradient naturel** avec step $\alpha$ donne exactement :
+On perturbe autour du point fixe global $\eta^*$ : $\delta\eta^t = \eta^t - \eta^*$. La mise à jour dampée donne :
 
-$$\eta_i^{t+1} = \eta_i^t + \alpha \cdot \Lambda_i^{-1} \nabla_{\eta_i} \mathcal{F}$$
+$$\delta\eta_i^{t+1} = (1 - \alpha_i)\,\delta\eta_i^t + \alpha_i \sum_{j \in \mathcal{N}(i)} J_{ij}\,\delta\eta_j^t$$
 
-Or on avait $\Lambda_i^{-1} \nabla_{\eta_i} \mathcal{F} = \eta_i^* - \eta_i^t$ au point fixe. Donc :
+En empilant tous les nœuds en un vecteur bloc $\delta\boldsymbol{\eta} \in \mathbb{R}^{\sum_i d_i}$ :
 
-$$\boxed{\eta_i^{t+1} = \eta_i^t + \alpha(\eta_i^* - \eta_i^t) = (1-\alpha)\eta_i^t + \alpha \eta_i^*}$$
+$$\delta\boldsymbol{\eta}^{t+1} = M \, \delta\boldsymbol{\eta}^t$$
 
-**L'update géométrique est exactement un pas de gradient naturel.** Ce n'est pas un hack numérique — c'est l'algorithme variationnel correct, avec $\alpha$ jouant le rôle du learning rate dans l'espace de Fisher.
+avec la matrice d'itération bloc :
 
-La Fisher disparaissait du point fixe, mais elle revient implicitement dans la **dynamique** via le gradient naturel — ce qui boucle proprement avec la question précédente.
+$$M_{ij} = \begin{cases} (1-\alpha_i) I_{d_i} & i = j \\ \alpha_i \, J_{ij} & j \in \mathcal{N}(i) \\ 0 & \text{sinon} \end{cases}$$
+
+Convergence $\iff \rho(M) < 1$.
+
+---
+
+### Condition suffisante par ligne de blocs
+
+Une condition suffisante classique (norme subordonnée en lignes) : $\|M\|_{\infty} < 1$, soit pour chaque bloc-ligne $i$ :
+
+$$\left\|(1-\alpha_i) I_{d_i}\right\|_2 + \sum_{j \in \mathcal{N}(i)} \left\|\alpha_i J_{ij}\right\|_2 < 1$$
+
+$$\iff (1 - \alpha_i) + \alpha_i \sum_{j \in \mathcal{N}(i)} \|J_{ij}\|_2 < 1$$
+
+$$\iff \alpha_i \left(\sum_{j \in \mathcal{N}(i)} \|J_{ij}\|_2 - 1\right) < 0$$
+
+Deux cas :
+
+- Si $\sum_j \|J_{ij}\|_2 < 1$ : la condition est satisfaite **pour tout** $\alpha_i \in (0,1]$
+- Si $\sum_j \|J_{ij}\|_2 \geq 1$ : il faut :
+
+$$\alpha_i < \frac{1}{\sum_{j \in \mathcal{N}(i)} \|J_{ij}\|_2}$$
+
+---
+
+### Choix optimal de $\alpha_i$
+
+On prend la borne serrée avec marge $\epsilon$ :
+
+$$\boxed{\alpha_i = \frac{1}{\max\!\left(1,\, \sum_{j \in \mathcal{N}(i)} \|J_{ij}\|_2\right)}}$$
+
+avec explicitement :
+
+$$\|J_{ij}\|_2 = \frac{\|B_{ij} \Lambda_j\|_2}{2 + |\mathcal{O}_i|}$$
+
+où $\|\cdot\|_2$ est la **plus grande valeur singulière**.
+
+**Propriétés :**
+
+- Nœud isolé ou observations fortes ($|\mathcal{O}_i| \gg 1$) : $\|J_{ij}\|_2 \to 0$, $\alpha_i \to 1$
+- Couplages forts : $\alpha_i$ décroît comme $1/\sum_j \|B_{ij}\Lambda_j\|_2$
+- $\alpha_i$ est **local** : calculable nœud par nœud sans inverser de matrice globale
+
+---
+
+### Remarque sur le dénominateur $2 + |\mathcal{O}_i|$
+
+Ce facteur vient du point fixe et mérite d'être explicité. Les quatre termes du gradient donnent en puissance d'amortissement sur $\eta_i$ :
+
+| Terme | Contribution |
+|---|---|
+| Prior relaxé | $-1 \cdot \eta_i$ |
+| Entropie | $-1 \cdot \eta_i$ |
+| Observations ($\|\mathcal{O}_i\|$) | $-\|\mathcal{O}_i\| \cdot \eta_i$ |
+| **Total** | $-(2 + \|\mathcal{O}_i\|) \cdot \eta_i$ |
+
+C'est ce coefficient qui apparaît au dénominateur de $J_{ij}$ — les observations **diluent** mécaniquement le gain de couplage, ce qui est cohérent avec l'intuition bayésienne : un nœud bien contraint par les données est moins sensible à ses voisins.

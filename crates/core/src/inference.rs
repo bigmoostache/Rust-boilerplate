@@ -1,14 +1,11 @@
-//! Jacobi fixed-point inference with damping.
+//! Jacobi fixed-point inference with Jacobian-based damping.
 //!
 //! The optimal natural parameters for each node satisfy:
 //!
 //! ```text
 //! η_i* = (η_i^relax + Σ_k η_k^obs + Σ_j B_ij · E[T_j])
-//!        / (1 + |O_i| + λ)
+//!        / (2 + |O_i|)
 //! ```
-//!
-//! where `λ` is the entropy scale.  This is a **weighted average** in
-//! natural parameter space — not an ELBO.
 //!
 //! Updates are fully parallel (Jacobi): all `E[T_j]` are frozen during
 //! each sweep.  A double buffer avoids read–write conflicts.  Damping
@@ -17,12 +14,24 @@
 //! ```text
 //! η_i^{t+1} = (1 − α_i) · η_i^t + α_i · η_i*
 //! ```
+//!
+//! The damping coefficient `α_i` is derived from the Jacobian of the
+//! fixed-point map and guarantees convergence:
+//!
+//! ```text
+//! α_i = 1 / max(1, Σ_j ||J_ij||_2)
+//! ```
+//!
+//! where `||J_ij||_2 = ||B_ij · Λ_j||_2 / (2 + |O_i|)` is the
+//! spectral norm (largest singular value) of the Jacobian block,
+//! and `Λ_j = ∇²A_j(η_j)` is the Fisher information matrix of node j.
 
-use nalgebra::DVector;
+use nalgebra::{DMatrix, DVector};
 
+use crate::constants::{MIN_ALPHA, NATURAL_PARAM_EPS};
 use crate::distributions::NaturalParams;
 use crate::graph::Graph;
-use crate::score::{Score as _, Breakdown};
+use crate::score::{Breakdown, Score as _};
 
 /// Result of the fixed-point inference.
 #[derive(Debug, Clone)]
@@ -58,26 +67,19 @@ pub fn coordinate_ascent(
     let n = graph.num_nodes();
     let mut score_history = Vec::with_capacity(max_iter);
 
-    // ── Pre-compute per-node damping α_i ────────────────────────
-    let alphas: Vec<f64> = (0..n)
+    // Denominator for the fixed-point formula per node:
+    // denom_i = 1 + |O_i| + λ   (prior + obs count + entropy scale)
+    let denoms: Vec<f64> = (0..n)
         .map(|i| {
-            let Some(node) = graph.nodes.get(i) else {
-                return 1.0;
-            };
-            let num_obs = graph.observations_for(&node.name).len();
-            let coupling_norm: f64 = graph
-                .neighbors(&node.name)
-                .iter()
-                .map(|(_, mat, _)| frobenius_norm(mat))
-                .sum();
-            let denom = 1.0 + f64::from(u32::try_from(num_obs).unwrap_or(u32::MAX)) + coupling_norm;
-            1.0 / denom
+            let num_obs = graph
+                .nodes
+                .get(i)
+                .map_or(0, |nd| graph.observations_for(&nd.name).len());
+            1.0 + f64::from(u32::try_from(num_obs).unwrap_or(u32::MAX)) + entropy_scale
         })
         .collect();
 
     // ── Double buffer: E[T_i] ───────────────────────────────────
-    // buffer_read is used during computation; buffer_write receives
-    // the new values.  They are swapped at the end of each iteration.
     let mut buffer_read: Vec<DVector<f64>> = graph
         .nodes
         .iter()
@@ -85,36 +87,73 @@ pub fn coordinate_ascent(
         .collect();
     let mut buffer_write: Vec<DVector<f64>> = buffer_read.clone();
 
+    // ── Pre-cache Fisher information Λ_j for each node ──────────
+    let mut fishers_read: Vec<DMatrix<f64>> = graph
+        .nodes
+        .iter()
+        .map(|node| node.post.fisher_information())
+        .collect();
+    let mut fishers_write: Vec<DMatrix<f64>> = fishers_read.clone();
+
+    // Track last max_change for reporting on non-convergence
+    let mut last_max_change = f64::NAN;
+
     for iter in 0..max_iter {
         let mut max_change = 0.0_f64;
 
-        // ── Parallel-safe sweep (Jacobi): read from buffer_read ──
         for node_idx in 0..n {
             let Some(node) = graph.nodes.get(node_idx) else {
                 continue;
             };
 
-            // Numerator: η_relax + Σ η_obs + Σ B_ij · E[T_j]
+            let denom = denoms.get(node_idx).copied().unwrap_or(2.0);
+
+            // ── Compute α_i from the Jacobian ───────────────────
+            // α_i = 1 / max(1, Σ_j ||J_ij||_2)
+            // with ||J_ij||_2 = ||B_ij · Λ_j||_2 / denom_i
+            let mut sum_j_norms = 0.0_f64;
+            if let Some(adj) = graph.adjacency.get(node_idx) {
+                for &(j_idx, edge_idx, transposed) in adj {
+                    if let (Some(fisher_j), Some(edge)) =
+                        (fishers_read.get(j_idx), graph.edges.get(edge_idx))
+                    {
+                        let b = if transposed {
+                            edge.coupling.transpose()
+                        } else {
+                            edge.coupling.clone()
+                        };
+                        let j_block = &b * fisher_j;
+                        let spectral = spectral_norm(&j_block);
+                        sum_j_norms += spectral / denom;
+                    }
+                }
+            }
+            let alpha = (1.0 / sum_j_norms.max(1.0)).max(MIN_ALPHA);
+
+            // ── Numerator: η_relax + Σ η_obs + Σ B_ij · E[T_j] ─
             let mut numerator = node.relax.eta_vector();
 
-            // Add coupling contributions from neighbors (using frozen E[T_j])
-            for (j_idx, coupling, transposed) in graph.neighbors(&node.name) {
-                if let Some(et_j) = buffer_read.get(j_idx) {
-                    let contribution = if transposed {
-                        &coupling.transpose() * et_j
-                    } else {
-                        coupling * et_j
-                    };
-                    for k in 0..numerator.len().min(contribution.len()) {
-                        if let (Some(dst), Some(src)) = (numerator.get_mut(k), contribution.get(k))
-                        {
-                            *dst += *src;
+            if let Some(adj) = graph.adjacency.get(node_idx) {
+                for &(j_idx, edge_idx, transposed) in adj {
+                    if let (Some(et_j), Some(edge)) =
+                        (buffer_read.get(j_idx), graph.edges.get(edge_idx))
+                    {
+                        let contribution = if transposed {
+                            &edge.coupling.transpose() * et_j
+                        } else {
+                            &edge.coupling * et_j
+                        };
+                        for k in 0..numerator.len().min(contribution.len()) {
+                            if let (Some(dst), Some(src)) =
+                                (numerator.get_mut(k), contribution.get(k))
+                            {
+                                *dst += *src;
+                            }
                         }
                     }
                 }
             }
 
-            // Add observation η_obs contributions
             let obs = graph.observations_for(&node.name);
             for eta_obs in obs {
                 let v = eta_obs.eta_vector();
@@ -125,37 +164,37 @@ pub fn coordinate_ascent(
                 }
             }
 
-            // Denominator: 1 + |O_i| + λ
-            let num_obs = obs.len();
-            let denominator =
-                1.0 + f64::from(u32::try_from(num_obs).unwrap_or(u32::MAX)) + entropy_scale;
+            // ── Fixed point: η* = numerator / denom ─────────────
+            let eta_star = &numerator / denom;
 
-            // Fixed point: η* = numerator / denominator
-            let eta_star = &numerator / denominator;
-
-            // Damped update: η^{t+1} = (1 − α) · η^t + α · η*
-            let alpha = alphas.get(node_idx).copied().unwrap_or(1.0);
+            // ── Damped update: η^{t+1} = (1−α)·η^t + α·η* ─────
             let old_eta = node.post.eta_vector();
             let new_eta = &old_eta * (1.0 - alpha) + &eta_star * alpha;
 
-            // Track convergence
             let change = (&new_eta - &old_eta).norm();
             max_change = max_change.max(change);
 
-            // Write new E[T_i] into buffer_write
+            // ── Write new posteriors + update Fisher cache ───────
             let reference = node.relax.clone();
-            if let Some(new_post) = NaturalParams::from_eta_vector(&new_eta, &reference) {
+            if let Some(new_post) = NaturalParams::from_eta_vector(&new_eta, &reference)
+                && let Some(clamped) = clamp_natural_params(new_post)
+            {
                 if let Some(et) = buffer_write.get_mut(node_idx) {
-                    *et = new_post.expected_suff_stats();
+                    *et = clamped.expected_suff_stats();
+                }
+                if let Some(f) = fishers_write.get_mut(node_idx) {
+                    *f = clamped.fisher_information();
                 }
                 if let Some(target) = graph.nodes.get_mut(node_idx) {
-                    target.post = new_post;
+                    target.post = clamped;
                 }
             }
         }
 
-        // Swap buffers
+        // Swap buffers (E[T] and Fisher)
         std::mem::swap(&mut buffer_read, &mut buffer_write);
+        std::mem::swap(&mut fishers_read, &mut fishers_write);
+        last_max_change = max_change;
 
         let score = graph.score_scaled(entropy_scale);
         score_history.push(score.total());
@@ -177,15 +216,81 @@ pub fn coordinate_ascent(
     ConvergenceResult {
         converged: false,
         iterations: max_iter,
-        max_change: f64::NAN,
+        max_change: last_max_change,
         score,
         score_history,
     }
 }
 
-/// Frobenius norm of a matrix: `||M||_F = sqrt(Σ m_ij²)`.
-fn frobenius_norm(m: &nalgebra::DMatrix<f64>) -> f64 {
-    m.iter().map(|x| x * x).sum::<f64>().sqrt()
+/// Spectral norm of a matrix (largest singular value).
+///
+/// Uses SVD decomposition.  For small matrices (typical in this
+/// application: max 7×7 for Dirichlet), this is fast.
+fn spectral_norm(m: &DMatrix<f64>) -> f64 {
+    let svd = m.clone().svd(false, false);
+    svd.singular_values.iter().copied().fold(0.0_f64, f64::max)
+}
+
+/// Clamp natural parameters to stay within valid domains.
+///
+/// Returns `None` if any component is NaN or if clamping would produce
+/// a degenerate distribution.
+///
+/// Domain constraints:
+/// - Gaussian: `η₂ < 0` (clamp to `−ε`)
+/// - Gamma: `η₁ > −1`, `η₂ < 0`
+/// - Beta: `η₁ > −1`, `η₂ > −1`
+/// - Poisson: no constraint (any real η₁ is valid)
+/// - Bernoulli: no constraint (any real η₁ is valid)
+/// - Categorical / Dirichlet: no per-component constraint
+fn clamp_natural_params(params: NaturalParams) -> Option<NaturalParams> {
+    match params {
+        NaturalParams::Gaussian { eta1, eta2 } => {
+            if eta1.is_nan() || eta2.is_nan() {
+                return None;
+            }
+            Some(NaturalParams::Gaussian {
+                eta1,
+                eta2: eta2.min(-NATURAL_PARAM_EPS),
+            })
+        }
+        NaturalParams::Gamma { eta1, eta2 } => {
+            if eta1.is_nan() || eta2.is_nan() {
+                return None;
+            }
+            Some(NaturalParams::Gamma {
+                eta1: eta1.max(-1.0 + NATURAL_PARAM_EPS),
+                eta2: eta2.min(-NATURAL_PARAM_EPS),
+            })
+        }
+        NaturalParams::Beta { eta1, eta2 } => {
+            if eta1.is_nan() || eta2.is_nan() {
+                return None;
+            }
+            Some(NaturalParams::Beta {
+                eta1: eta1.max(-1.0 + NATURAL_PARAM_EPS),
+                eta2: eta2.max(-1.0 + NATURAL_PARAM_EPS),
+            })
+        }
+        NaturalParams::Poisson { eta1 } => {
+            if eta1.is_nan() {
+                return None;
+            }
+            Some(NaturalParams::Poisson { eta1 })
+        }
+        NaturalParams::Bernoulli { eta1 } => {
+            if eta1.is_nan() {
+                return None;
+            }
+            Some(NaturalParams::Bernoulli { eta1 })
+        }
+        NaturalParams::Categorical { ref eta } | NaturalParams::Dirichlet { ref eta } => {
+            if eta.iter().any(|v| v.is_nan()) {
+                return None;
+            }
+            Some(params)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -262,10 +367,7 @@ mod tests {
             .as_ref()
             .and_then(|v| v.get(1).copied())
             .unwrap_or(f64::NAN);
-        assert!(
-            (eta1 - 1.0).abs() < 1e-6,
-            "eta1={eta1}, expected 1.0"
-        );
+        assert!((eta1 - 1.0).abs() < 1e-6, "eta1={eta1}, expected 1.0");
         assert!(
             (eta2 - (-1.0 / 3.0)).abs() < 1e-6,
             "eta2={eta2}, expected -1/3"
@@ -323,10 +425,7 @@ mod tests {
             tau: 1.0,
         };
         let mut graph = Graph::new(vec![node], vec![]);
-        graph.add_observation(
-            "test".to_owned(),
-            NaturalParams::Bernoulli { eta1: 2.0 },
-        );
+        graph.add_observation("test".to_owned(), NaturalParams::Bernoulli { eta1: 2.0 });
 
         let result = coordinate_ascent(&mut graph, 100, 1e-10, 1.0);
         assert!(result.converged);
@@ -335,10 +434,7 @@ mod tests {
         // p = sigmoid(2/3) ≈ 0.66
         let eta = graph.nodes.first().map(|n| n.post.eta_vector());
         let eta1 = eta.as_ref().and_then(|v| v.get(0).copied()).unwrap_or(0.0);
-        assert!(
-            (eta1 - 2.0 / 3.0).abs() < 1e-6,
-            "eta1={eta1}, expected 2/3"
-        );
+        assert!((eta1 - 2.0 / 3.0).abs() < 1e-6, "eta1={eta1}, expected 2/3");
         let prob = 1.0 / (1.0 + (-eta1).exp());
         assert!(
             prob > 0.55,

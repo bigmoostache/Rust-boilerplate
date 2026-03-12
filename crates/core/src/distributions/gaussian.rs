@@ -37,6 +37,10 @@ impl ExponentialFamily for Gaussian {
         DMatrix::from_row_slice(2, 2, &[sigma2, cov_x_x2, cov_x_x2, var_x2])
     }
 
+    /// Returns `0` because we use the convention `h(x) = 1`.
+    ///
+    /// The standard Gaussian base measure `h(x) = (2π)^{−½}` is
+    /// absorbed into `A(η)` (which includes `½ ln(2πσ²)`).
     fn expected_log_base_measure(_eta: &DVector<f64>) -> f64 {
         0.0
     }
@@ -55,7 +59,11 @@ pub(super) fn expected_suff_stats(eta1: f64, eta2: f64) -> DVector<f64> {
     DVector::from_vec(vec![mu, mu.mul_add(mu, sigma2)])
 }
 
-/// `A(η) = −η₁²/(4η₂) + ½ ln(−π/η₂)`.
+/// `A(η) = −η₁²/(4η₂) + ½ ln(π/(−η₂))`.
+///
+/// This uses the convention `h(x) = 1`, absorbing the `(2π)^{−½}`
+/// normalizer into `A(η)`.  With `−η₂ = 1/(2σ²)`, the second term
+/// equals `½ ln(2πσ²)`.
 pub(super) fn log_partition(eta1: f64, eta2: f64) -> f64 {
     let quadratic = -eta1 * eta1 / (4.0 * eta2);
     0.5f64.mul_add((-std::f64::consts::PI / eta2).ln(), quadratic)

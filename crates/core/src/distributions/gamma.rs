@@ -6,6 +6,8 @@
 
 use nalgebra::{DMatrix, DVector};
 
+use crate::constants::{DIGAMMA_ASYM, TRIGAMMA_ASYM};
+
 use super::ExponentialFamily;
 
 /// Marker type for the Gamma exponential family.
@@ -53,13 +55,14 @@ fn canonical(eta1: f64, eta2: f64) -> (f64, f64) {
 /// Digamma function `ψ(x) = d/dx ln Γ(x)`.
 ///
 /// Uses the asymptotic series with argument reduction.
+///
+/// ```text
+/// ψ(z) = ln(z) − 1/(2z) − Σ_k B_{2k} / (2k · z^{2k})
+/// ```
 pub(crate) fn digamma(x: f64) -> f64 {
-    // Shift x up until x >= 8 for good asymptotic accuracy.
     let mut result = 0.0;
     let mut z = x;
-    // Shift x up until x >= 8 for good asymptotic accuracy.
     // Shift z up until z >= 8 for good asymptotic accuracy.
-    // z is always positive; at most 8 shifts are needed.
     for _ in 0..8_u32 {
         if z >= 8.0 {
             break;
@@ -67,18 +70,25 @@ pub(crate) fn digamma(x: f64) -> f64 {
         result -= 1.0 / z;
         z += 1.0;
     }
-    // Asymptotic expansion for large z.
-    let z2 = 1.0 / (z * z);
-    result += z.ln()
-        - 0.5 / z
-        - z2 * (1.0 / 12.0
-            - z2 * (1.0 / 120.0 - z2 * (1.0 / 252.0 - z2 * (1.0 / 240.0 - z2 / 132.0))));
+    // Asymptotic expansion: ψ(z) = ln(z) − 1/(2z) − Σ c_k / z^{2k}
+    // where c_k = B_{2k} / (2k) = DIGAMMA_ASYM[k-1].
+    // Evaluate via Horner in z⁻².
+    let iz2 = 1.0 / (z * z);
+    let mut poly = 0.0_f64;
+    for &c in DIGAMMA_ASYM.iter().rev() {
+        poly = poly.mul_add(iz2, c);
+    }
+    result += z.ln() - 0.5 / z - iz2 * poly;
     result
 }
 
 /// Trigamma function `ψ'(x) = d²/dx² ln Γ(x)`.
 ///
 /// Uses the asymptotic series with argument reduction.
+///
+/// ```text
+/// ψ'(z) = 1/z + 1/(2z²) + Σ_k B_{2k} / z^{2k+1}
+/// ```
 pub(crate) fn trigamma(x: f64) -> f64 {
     let mut result = 0.0;
     let mut z = x;
@@ -90,15 +100,16 @@ pub(crate) fn trigamma(x: f64) -> f64 {
         result += 1.0 / (z * z);
         z += 1.0;
     }
-    // Asymptotic expansion: ψ'(z) = 1/z + 1/(2z²) + 1/(6z³) − …
+    // Asymptotic expansion: ψ'(z) = 1/z + 1/(2z²) + Σ B_{2k} / z^{2k+1}
+    // = 1/z + 1/(2z²) + (1/z³) · Σ B_{2k} · z^{−2(k−1)}
+    // Evaluate the polynomial Σ B_{2k} · (1/z²)^{k-1} via Horner in z⁻².
     let iz = 1.0 / z;
     let iz2 = iz * iz;
-    result += iz
-        + iz2 * 0.5
-        + (iz2 * iz).mul_add(
-            1.0 / 6.0 - iz2 * (1.0 / 30.0 - iz2 * (1.0 / 42.0 - iz2 * (1.0 / 30.0 - iz2 / 22.0))),
-            0.0,
-        );
+    let mut poly = 0.0_f64;
+    for &c in TRIGAMMA_ASYM.iter().rev() {
+        poly = poly.mul_add(iz2, c);
+    }
+    result += (iz2 * iz).mul_add(poly, 0.5f64.mul_add(iz2, iz));
     result
 }
 
@@ -201,5 +212,24 @@ mod tests {
         // ln Γ(0.5) = ½ ln π
         let half_ln_pi = 0.5 * std::f64::consts::PI.ln();
         assert!((lgamma(0.5) - half_ln_pi).abs() < 1e-10);
+    }
+
+    #[test]
+    fn trigamma_known_values() {
+        let pi = std::f64::consts::PI;
+        // ψ'(1) = π²/6
+        let tri1 = trigamma(1.0);
+        let expected1 = pi * pi / 6.0;
+        assert!(
+            (tri1 - expected1).abs() < 1e-10,
+            "ψ'(1) = {tri1}, expected π²/6 = {expected1}"
+        );
+        // ψ'(2) = π²/6 − 1
+        let tri2 = trigamma(2.0);
+        let expected2 = pi * pi / 6.0 - 1.0;
+        assert!(
+            (tri2 - expected2).abs() < 1e-10,
+            "ψ'(2) = {tri2}, expected π²/6 − 1 = {expected2}"
+        );
     }
 }

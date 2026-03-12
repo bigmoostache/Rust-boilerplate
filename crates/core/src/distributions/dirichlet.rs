@@ -30,17 +30,20 @@ impl ExponentialFamily for DirichletDist {
     }
 
     /// `∇²A(η)` for Dirichlet:
-    /// - diagonal: `ψ'(α_k) − ψ'(Σα)`
-    /// - off-diagonal: `−ψ'(Σα)`
+    /// - diagonal: `ψ'(α_k) + ψ'(Σα)`
+    /// - off-diagonal: `+ψ'(Σα)`
+    ///
+    /// The `−ln Γ(Σα)` term in `A(η)` contributes `+ψ'(Σα)` to every
+    /// entry of the Hessian (second derivative of `−ln Γ` is `+ψ'`).
     fn fisher_information(eta: &DVector<f64>) -> DMatrix<f64> {
         let alpha: Vec<f64> = eta.iter().map(|&e| e + 1.0).collect();
         let alpha_sum: f64 = alpha.iter().sum();
         let tri_sum = trigamma(alpha_sum);
         let k = eta.len();
-        let mut f = DMatrix::from_element(k, k, -tri_sum);
+        let mut f = DMatrix::from_element(k, k, tri_sum);
         for i in 0..k {
             if let (Some(cell), Some(&ai)) = (f.get_mut((i, i)), alpha.get(i)) {
-                *cell = trigamma(ai) - tri_sum;
+                *cell = trigamma(ai) + tri_sum;
             }
         }
         f
@@ -122,5 +125,34 @@ mod tests {
         // A(1,1,1) = 3·ln Γ(1) − ln Γ(3) = 0 − ln 2 = −ln 2
         let a = log_partition(&uniform);
         assert!((a + 2.0_f64.ln()).abs() < 1e-10);
+    }
+
+    #[test]
+    fn fisher_positive_definite() {
+        // Fisher information must be positive definite for any valid α.
+        // Verify via Cholesky decomposition (succeeds iff Λ ≻ 0).
+        let eta = DVector::from_vec(ETA.to_vec());
+        let fisher = DirichletDist::fisher_information(&eta);
+        assert!(
+            fisher.clone().cholesky().is_some(),
+            "Fisher information should be positive definite, got:\n{fisher}"
+        );
+
+        // Also verify structure: off-diagonal = ψ'(α₀), diagonal > off-diagonal
+        let alpha_sum = 10.0;
+        let tri_sum = trigamma(alpha_sum);
+        let off_diag = fisher.get((0, 1)).copied().unwrap_or(f64::NAN);
+        assert!(
+            (off_diag - tri_sum).abs() < 1e-10,
+            "off-diagonal should be ψ'(α₀)={tri_sum}, got {off_diag}"
+        );
+        for (i, &ai) in ALPHA.iter().enumerate() {
+            let diag = fisher.get((i, i)).copied().unwrap_or(f64::NAN);
+            let expected = trigamma(ai) + tri_sum;
+            assert!(
+                (diag - expected).abs() < 1e-10,
+                "diagonal[{i}] should be ψ'({ai})+ψ'(α₀)={expected}, got {diag}"
+            );
+        }
     }
 }

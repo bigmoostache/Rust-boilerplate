@@ -236,7 +236,7 @@ instruments:
     node: A
     model:
       type: bernoulli_obs
-      weight: 2.0
+      epsilon: 0.1
 observations: []
 inference: { max_iter: 10, tolerance: 0.01, delta_t: 1.0 }
 "#;
@@ -415,4 +415,3 @@ inference: { max_iter: 10, tolerance: -1.0, delta_t: -1.0 }
         }
     }
 }
-

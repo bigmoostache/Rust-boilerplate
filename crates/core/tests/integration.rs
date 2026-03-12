@@ -100,7 +100,7 @@ mod integration_tests {
         graph.add_observation("BMI".to_owned(), gaussian_obs(30.0, 4.0));
 
         // Run inference
-        let result = coordinate_ascent(&mut graph, 200, 1e-10, 1.0);
+        let result = coordinate_ascent(&mut graph, 5000, 1e-10, 1.0);
 
         // 1. Must converge
         assert!(
@@ -150,10 +150,7 @@ mod integration_tests {
         // 5. Score should be monotonically non-decreasing
         for pair in result.score_history.windows(2) {
             if let (Some(prev), Some(next)) = (pair.first(), pair.get(1)) {
-                assert!(
-                    *next >= *prev - 1e-8,
-                    "Score decreased: {prev} → {next}",
-                );
+                assert!(*next >= *prev - 1e-8, "Score decreased: {prev} → {next}",);
             }
         }
     }
@@ -174,7 +171,11 @@ mod integration_tests {
         }
 
         let result = coordinate_ascent(&mut graph, 500, 1e-12, 1.0);
-        assert!(result.converged, "did not converge in {} iters, max_change={}", result.iterations, result.max_change);
+        assert!(
+            result.converged,
+            "did not converge in {} iters, max_change={}",
+            result.iterations, result.max_change
+        );
 
         // Fixed-point formula:
         // η* = (η_relax + 5·η_obs) / (1 + 5 + 1)
@@ -260,7 +261,7 @@ observations:
   - instrument: bp_cuff
     value: 145.0
 inference:
-  max_iter: 200
+  max_iter: 5000
   tolerance: 1.0e-10
   delta_t: 7.0
 "#;

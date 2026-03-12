@@ -4,6 +4,7 @@
 //! each node carries a distribution from an exponential family.
 //! Inference produces a coherent Bayesian update of the patient state.
 
+pub mod constants;
 pub mod distributions;
 pub mod graph;
 pub mod inference;

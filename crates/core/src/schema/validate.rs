@@ -347,6 +347,3 @@ fn validate_and_build(raw: &GraphConfig) -> Result<ValidatedConfig, SchemaErrors
         entropy_scale: inference.entropy_scale.unwrap_or(1.0),
     })
 }
-
-
-

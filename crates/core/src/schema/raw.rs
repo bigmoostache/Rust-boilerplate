@@ -172,15 +172,21 @@ pub enum ModelDef {
         noise_var: f64,
     },
 
-    /// Bernoulli observation with a strength weight.
+    /// Bernoulli observation with measurement noise.
     ///
-    /// → `η_obs = +weight` (if true) or `−weight` (if false)
+    /// The instrument has a symmetric error rate `ε ∈ [0, 0.5)`:
+    /// - `P(measure true  | truly true)  = 1 − ε`
+    /// - `P(measure false | truly false) = 1 − ε`
+    ///
+    /// For `obs = true`:  `η_obs = ln((1−ε) / ε)`
+    /// For `obs = false`: `η_obs = ln(ε / (1−ε)) = −ln((1−ε) / ε)`
     ///
     /// Compatible with: Bernoulli nodes.
     #[serde(rename = "bernoulli_obs")]
     BernoulliObs {
-        /// Evidence strength `w > 0` (logit-scale shift).
-        weight: f64,
+        /// Symmetric error probability `ε ∈ [0, 0.5)`.
+        /// `ε = 0` means perfect observation.
+        epsilon: f64,
     },
 
     /// Poisson count observation.
@@ -198,15 +204,22 @@ pub enum ModelDef {
         exposure: f64,
     },
 
-    /// Categorical observation with a strength weight.
+    /// Categorical observation with uniform confusion noise.
     ///
-    /// → `η_obs` has `+weight` at the observed category, `0` elsewhere.
+    /// The instrument has a confusion probability `ε ∈ [0, 1)`:
+    /// - `P(measure k | truly k) = 1 − ε`
+    /// - `P(measure k | truly j≠k) = ε / (K−1)`
+    ///
+    /// For observed category `k`:
+    /// `η_obs_k = ln((1−ε) / (ε/(K−1))) = ln((1−ε)(K−1) / ε)`
+    /// Other log-ratios stay at 0.
     ///
     /// Compatible with: Categorical nodes.
     #[serde(rename = "categorical_obs")]
     CategoricalObs {
-        /// Evidence strength `w > 0` (log-ratio scale shift).
-        weight: f64,
+        /// Uniform confusion probability `ε ∈ [0, 1)`.
+        /// `ε = 0` means perfect observation.
+        epsilon: f64,
     },
 
     /// Beta proportion observation with concentration.

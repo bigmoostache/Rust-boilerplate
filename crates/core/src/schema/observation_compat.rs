@@ -10,6 +10,7 @@
 
 use std::collections::HashMap;
 
+use crate::constants::{EPSILON_ZERO_THRESHOLD, PERFECT_OBS_ETA, POISSON_ZERO_CORRECTION};
 use crate::distributions::NaturalParams;
 use crate::graph::NodeId;
 
@@ -54,11 +55,19 @@ pub(super) fn validate_instrument(
                 });
             }
         }
-        ModelDef::BernoulliObs { weight } | ModelDef::CategoricalObs { weight } => {
-            if *weight <= 0.0 {
+        ModelDef::BernoulliObs { epsilon } => {
+            if *epsilon < 0.0 || *epsilon >= 0.5 {
                 errors.push(SchemaError {
-                    path: format!("{path}.model.weight"),
-                    message: format!("weight must be > 0, got {weight}"),
+                    path: format!("{path}.model.epsilon"),
+                    message: format!("epsilon must be in [0, 0.5), got {epsilon}"),
+                });
+            }
+        }
+        ModelDef::CategoricalObs { epsilon } => {
+            if *epsilon < 0.0 || *epsilon >= 1.0 {
+                errors.push(SchemaError {
+                    path: format!("{path}.model.epsilon"),
+                    message: format!("epsilon must be in [0, 1), got {epsilon}"),
                 });
             }
         }
@@ -111,7 +120,10 @@ pub(super) fn check_model_family_compat(
         (ModelDef::GaussianNoise { .. }, FamilyDef::Gaussian { .. })
             | (ModelDef::BernoulliObs { .. }, FamilyDef::Bernoulli { .. })
             | (ModelDef::PoissonObs { .. }, FamilyDef::Poisson { .. })
-            | (ModelDef::CategoricalObs { .. }, FamilyDef::Categorical { .. })
+            | (
+                ModelDef::CategoricalObs { .. },
+                FamilyDef::Categorical { .. }
+            )
             | (ModelDef::BetaObs { .. }, FamilyDef::Beta { .. })
             | (ModelDef::GammaObs { .. }, FamilyDef::Gamma { .. })
             | (ModelDef::DirichletObs { .. }, FamilyDef::Dirichlet { .. })
@@ -192,24 +204,32 @@ fn resolve_value(
             })
         }
 
-        ModelDef::BernoulliObs { weight } => {
+        ModelDef::BernoulliObs { epsilon } => {
             let v = extract_bool(value, path)?;
-            Ok(NaturalParams::Bernoulli {
-                eta1: if v { *weight } else { -weight },
-            })
+            // ε = 0 → perfect observation → η_obs = ±∞ → clamp
+            let eta = if *epsilon < EPSILON_ZERO_THRESHOLD {
+                if v { PERFECT_OBS_ETA } else { -PERFECT_OBS_ETA }
+            } else {
+                let log_odds = ((1.0 - epsilon) / epsilon).ln();
+                if v { log_odds } else { -log_odds }
+            };
+            Ok(NaturalParams::Bernoulli { eta1: eta })
         }
 
         ModelDef::PoissonObs { exposure } => {
             let count = extract_nonneg_int(value, path)?;
-            // MLE of ln(λ): ln(count / exposure)
-            // Continuity correction for count=0: use 0.5
-            let effective_count = if count == 0 { 0.5 } else { f64::from(u32::try_from(count).unwrap_or(u32::MAX)) };
+            // Continuity correction for count=0
+            let effective_count = if count == 0 {
+                POISSON_ZERO_CORRECTION
+            } else {
+                f64::from(u32::try_from(count).unwrap_or(u32::MAX))
+            };
             Ok(NaturalParams::Poisson {
                 eta1: (effective_count / exposure).ln(),
             })
         }
 
-        ModelDef::CategoricalObs { weight } => {
+        ModelDef::CategoricalObs { epsilon } => {
             let cat = extract_nonneg_int(value, path)?;
             let category = usize::try_from(cat).unwrap_or(usize::MAX);
             let k = num_categories.unwrap_or(0);
@@ -221,19 +241,33 @@ fn resolve_value(
                     ),
                 }]);
             }
-            // η_obs has +weight at the observed category's log-ratio position.
-            // Categorical natural params are K-1 log-ratios (vs reference class K).
-            // If the observed category is the reference class (k-1), all
-            // log-ratios get -weight (reference class is more likely).
+            // Categorical natural params are K-1 log-ratios (vs reference class K-1).
             let dim = if k > 1 { k.saturating_sub(1) } else { 1 };
+
+            // Compute log-odds from confusion matrix:
+            // P(measure cat | truly cat) = 1 − ε
+            // P(measure cat | truly j≠cat) = ε / (K−1)
+            // log-odds = ln((1−ε) / (ε/(K−1))) = ln((1−ε)(K−1) / ε)
+            let log_odds = if *epsilon < EPSILON_ZERO_THRESHOLD {
+                PERFECT_OBS_ETA // perfect observation → clamp
+            } else {
+                let k_f = f64::from(u32::try_from(k.max(2)).unwrap_or(u32::MAX));
+                ((1.0 - epsilon) * (k_f - 1.0) / epsilon).ln()
+            };
+
             let mut eta = vec![0.0; dim];
             if category < dim
                 && let Some(slot) = eta.get_mut(category)
             {
-                *slot = *weight;
+                *slot = log_odds;
             }
-            // If category == reference class (last), all others stay 0
-            // which effectively shifts evidence toward the reference.
+            // If category == reference class (last), all log-ratios get
+            // −log_odds (reference is more likely than each alternative).
+            if category >= dim {
+                for e in &mut eta {
+                    *e = -log_odds;
+                }
+            }
             Ok(NaturalParams::Categorical { eta })
         }
 

@@ -16,22 +16,23 @@ instruments:
 
   # -- Symptom questionnaire instruments --
   # Each binary symptom has its own conjugate Bernoulli instrument.
-  # weight controls how strongly the observation shifts the posterior.
+  # epsilon = symmetric error rate of the questionnaire.
+  # epsilon = 0 means the patient's answer is perfectly reliable.
 
   - name: questionnaire_cephalee
     node: headache
     model:
       type: bernoulli_obs
-      weight: 2.0
+      epsilon: 0.0
 
   - name: questionnaire_gorge
     node: sore_throat
     model:
       type: bernoulli_obs
-      weight: 2.0
+      epsilon: 0.0
 
   - name: questionnaire_courbatures
     node: body_aches
     model:
       type: bernoulli_obs
-      weight: 2.0
+      epsilon: 0.0

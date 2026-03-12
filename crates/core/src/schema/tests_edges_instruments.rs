@@ -188,7 +188,7 @@ instruments:
     node: has_flu
     model:
       type: bernoulli_obs
-      weight: 2.0
+      epsilon: 0.1
 observations:
   - instrument: bp_cuff
     value: 145.0

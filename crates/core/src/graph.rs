@@ -58,6 +58,12 @@ pub struct Graph {
     pub id_to_index: HashMap<NodeId, usize>,
     /// All edges.
     pub edges: Vec<Edge>,
+    /// Pre-computed adjacency list: for each node index, a list of
+    /// `(neighbor_index, edge_index, is_transposed)`.
+    ///
+    /// This is a read-only cache built at construction time — do not
+    /// modify directly.
+    pub adjacency: Vec<Vec<(usize, usize, bool)>>,
     /// Observations per node — each observation is a `NaturalParams`
     /// (`η_obs`) in the same family as the node.
     pub observations: HashMap<NodeId, Vec<NaturalParams>>,
@@ -71,8 +77,9 @@ impl Graph {
     ///
     /// # Panics
     ///
-    /// Panics if edge references a non-existent node or if coupling
-    /// matrix dimensions don't match sufficient-statistic dimensions.
+    /// Panics if an edge references a non-existent node or if a coupling
+    /// matrix has dimensions that don't match the sufficient-statistic
+    /// dimensions of the connected nodes.
     #[must_use]
     pub fn new(nodes: Vec<Node>, edges: Vec<Edge>) -> Self {
         let id_to_index: HashMap<NodeId, usize> = nodes
@@ -81,25 +88,49 @@ impl Graph {
             .map(|(i, n)| (n.name.clone(), i))
             .collect();
 
-        // Validate edges
-        for edge in &edges {
-            if let (Some(&a_idx), Some(&b_idx)) =
-                (id_to_index.get(&edge.node_a), id_to_index.get(&edge.node_b))
-            {
-                if let (Some(na), Some(nb)) = (nodes.get(a_idx), nodes.get(b_idx)) {
-                    let da = na.epidemio.suff_stat_dim();
-                    let db = nb.epidemio.suff_stat_dim();
-                    debug_assert!(
-                        edge.coupling.nrows() == da && edge.coupling.ncols() == db,
-                        "coupling matrix for edge ({}, {}) has shape {}×{}, expected {da}×{db}",
-                        edge.node_a,
-                        edge.node_b,
-                        edge.coupling.nrows(),
-                        edge.coupling.ncols()
-                    );
-                }
-            } else {
-                debug_assert!(false, "edge references unknown node");
+        let n = nodes.len();
+        let mut adjacency: Vec<Vec<(usize, usize, bool)>> = vec![Vec::new(); n];
+
+        // Validate edges and build adjacency list
+        for (edge_idx, edge) in edges.iter().enumerate() {
+            let a_idx = id_to_index.get(&edge.node_a).copied();
+            let b_idx = id_to_index.get(&edge.node_b).copied();
+
+            assert!(
+                a_idx.is_some(),
+                "edge references unknown node \"{}\"",
+                edge.node_a
+            );
+            assert!(
+                b_idx.is_some(),
+                "edge references unknown node \"{}\"",
+                edge.node_b
+            );
+
+            // Both unwraps are guarded by the asserts above.
+            let a_idx = a_idx.unwrap_or(0);
+            let b_idx = b_idx.unwrap_or(0);
+
+            if let (Some(na), Some(nb)) = (nodes.get(a_idx), nodes.get(b_idx)) {
+                let da = na.epidemio.suff_stat_dim();
+                let db = nb.epidemio.suff_stat_dim();
+                assert!(
+                    edge.coupling.nrows() == da && edge.coupling.ncols() == db,
+                    "coupling matrix for edge ({}, {}) has shape {}×{}, expected {da}×{db}",
+                    edge.node_a,
+                    edge.node_b,
+                    edge.coupling.nrows(),
+                    edge.coupling.ncols()
+                );
+            }
+
+            // node_a sees (b_idx, edge_idx, false)
+            // node_b sees (a_idx, edge_idx, true) — transposed
+            if let Some(adj) = adjacency.get_mut(a_idx) {
+                adj.push((b_idx, edge_idx, false));
+            }
+            if let Some(adj) = adjacency.get_mut(b_idx) {
+                adj.push((a_idx, edge_idx, true));
             }
         }
 
@@ -107,6 +138,7 @@ impl Graph {
             nodes,
             id_to_index,
             edges,
+            adjacency,
             observations: HashMap::new(),
         }
     }
@@ -163,24 +195,25 @@ impl Graph {
     /// Get the list of neighbor indices and coupling matrices for a node.
     ///
     /// Returns `(neighbor_index, coupling_matrix, is_transposed)` triples.
-    /// If the edge is `(i, j)` and we're asking about node `i`, returns
-    /// `(j_idx, B_ij, false)`. If asking about `j`, returns
-    /// `(i_idx, B_ij, true)` — meaning the coupling should be transposed.
+    /// If the edge is `(a, b)` and we're asking about node `a`, returns
+    /// `(b_idx, B_ab, false)`. If asking about `b`, returns
+    /// `(a_idx, B_ab, true)` — meaning the coupling should be transposed.
+    ///
+    /// Uses the pre-computed adjacency list — O(degree) per call.
     #[must_use]
     pub fn neighbors(&self, node_id: &str) -> Vec<(usize, &DMatrix<f64>, bool)> {
-        let mut result = Vec::new();
-        for edge in &self.edges {
-            if edge.node_a == node_id {
-                if let Some(&b_idx) = self.id_to_index.get(&edge.node_b) {
-                    result.push((b_idx, &edge.coupling, false));
-                }
-            } else if edge.node_b == node_id
-                && let Some(&a_idx) = self.id_to_index.get(&edge.node_a)
-            {
-                result.push((a_idx, &edge.coupling, true));
-            }
-        }
-        result
+        let Some(&idx) = self.id_to_index.get(node_id) else {
+            return Vec::new();
+        };
+        self.adjacency.get(idx).map_or_else(Vec::new, |adj| {
+            adj.iter()
+                .filter_map(|&(neighbor_idx, edge_idx, transposed)| {
+                    self.edges
+                        .get(edge_idx)
+                        .map(|e| (neighbor_idx, &e.coupling, transposed))
+                })
+                .collect()
+        })
     }
 }
 
@@ -264,7 +297,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(debug_assertions)]
     #[should_panic(expected = "coupling matrix")]
     fn invalid_coupling_dims() {
         let nodes = vec![
