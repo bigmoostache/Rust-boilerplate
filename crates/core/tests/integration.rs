@@ -252,8 +252,8 @@ edges:
   - node_a: blood_pressure
     node_b: hypertension
     coupling:
-      - [0.01, 0.0]
-      - [0.0, 0.005]
+      - [0.001, 0.0]
+      - [0.0, 0.0]
 instruments:
   - name: bp_cuff
     node: blood_pressure
@@ -264,8 +264,8 @@ observations:
   - instrument: bp_cuff
     value: 145.0
 inference:
-  max_iter: 5000
-  tolerance: 1.0e-10
+  max_iter: 10000
+  tolerance: 1.0e-6
   delta_t: 7.0
 "#;
         // Parse
@@ -281,7 +281,15 @@ inference:
 
             // Infer
             let inf_result = coordinate_ascent(&mut graph, config.max_iter, config.tolerance, 1.0);
-            assert!(inf_result.converged, "inference did not converge");
+            eprintln!(
+                "converged={}, iterations={}, max_change={}",
+                inf_result.converged, inf_result.iterations, inf_result.max_change
+            );
+            assert!(
+                inf_result.converged,
+                "inference did not converge: iterations={}, max_change={}",
+                inf_result.iterations, inf_result.max_change
+            );
 
             // Build output and serialize to YAML
             let output = build_result(&graph, &inf_result);

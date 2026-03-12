@@ -16,7 +16,7 @@ observations:
 
   # Headache: no
   - instrument: questionnaire_cephalee
-    value: 0.001
+    value: 1.0e-5
 
   # Sore throat: yes — the dominant symptom
   - instrument: questionnaire_gorge
@@ -27,6 +27,6 @@ observations:
     value: 0.001
 
 inference:
-  max_iter: 500
-  tolerance: 1.0e-10
+  max_iter: 5000
+  tolerance: 1.0e-6
   delta_t: 0.0

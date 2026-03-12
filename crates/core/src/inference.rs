@@ -28,7 +28,7 @@
 
 use nalgebra::{DMatrix, DVector};
 
-use crate::constants::{MIN_ALPHA, NATURAL_PARAM_EPS};
+use crate::constants::MIN_ALPHA;
 use crate::distributions::NaturalParams;
 use crate::graph::Graph;
 use crate::score::{Breakdown, Score as _};
@@ -69,6 +69,9 @@ pub fn coordinate_ascent(
 
     // Denominator for the fixed-point formula per node:
     // denom_i = 1 + |O_i| + λ   (prior + obs count + entropy scale)
+    //
+    // Pre-computed once — the observation set is frozen for the entire
+    // inference run.  Do not add/remove observations after calling this.
     let denoms: Vec<f64> = (0..n)
         .map(|i| {
             let num_obs = graph
@@ -100,6 +103,12 @@ pub fn coordinate_ascent(
 
     for iter in 0..max_iter {
         let mut max_change = 0.0_f64;
+
+        // Initialize write buffers from read buffers so that nodes
+        // whose update is skipped (NaN check failure) keep their
+        // current values instead of stale ones from iteration t-1.
+        buffer_write.clone_from(&buffer_read);
+        fishers_write.clone_from(&fishers_read);
 
         for node_idx in 0..n {
             let Some(node) = graph.nodes.get(node_idx) else {
@@ -177,16 +186,16 @@ pub fn coordinate_ascent(
             // ── Write new posteriors + update Fisher cache ───────
             let reference = node.relax.clone();
             if let Some(new_post) = NaturalParams::from_eta_vector(&new_eta, &reference)
-                && let Some(clamped) = clamp_natural_params(new_post)
+                && check_natural_params(&new_post)
             {
                 if let Some(et) = buffer_write.get_mut(node_idx) {
-                    *et = clamped.expected_suff_stats();
+                    *et = new_post.expected_suff_stats();
                 }
                 if let Some(f) = fishers_write.get_mut(node_idx) {
-                    *f = clamped.fisher_information();
+                    *f = new_post.fisher_information();
                 }
                 if let Some(target) = graph.nodes.get_mut(node_idx) {
-                    target.post = clamped;
+                    target.post = new_post;
                 }
             }
         }
@@ -231,46 +240,17 @@ fn spectral_norm(m: &DMatrix<f64>) -> f64 {
     svd.singular_values.iter().copied().fold(0.0_f64, f64::max)
 }
 
-/// Clamp natural parameters to stay within valid domains.
+/// Check natural parameters for NaN.
 ///
-/// Returns `None` if any component is NaN or if clamping would produce
-/// a degenerate distribution.
-///
-/// Domain constraints:
-/// - Gaussian: `η₂ < 0` (clamp to `−ε`)
-/// - Gamma: `η₁ > −1`, `η₂ < 0`
-/// - Dirichlet: `η_k > −1` (clamp each component to `−1 + ε`)
-fn clamp_natural_params(params: NaturalParams) -> Option<NaturalParams> {
+/// Returns `None` if any component is NaN (signals divergence).
+/// No clamping — if the algorithm produces invalid parameters,
+/// that's a convergence failure that should be diagnosed, not masked.
+fn check_natural_params(params: &NaturalParams) -> bool {
     match params {
-        NaturalParams::Gaussian { eta1, eta2 } => {
-            if eta1.is_nan() || eta2.is_nan() {
-                return None;
-            }
-            Some(NaturalParams::Gaussian {
-                eta1,
-                eta2: eta2.min(-NATURAL_PARAM_EPS),
-            })
+        NaturalParams::Gaussian { eta1, eta2 } | NaturalParams::Gamma { eta1, eta2 } => {
+            !eta1.is_nan() && !eta2.is_nan()
         }
-        NaturalParams::Gamma { eta1, eta2 } => {
-            if eta1.is_nan() || eta2.is_nan() {
-                return None;
-            }
-            Some(NaturalParams::Gamma {
-                eta1: eta1.max(-1.0 + NATURAL_PARAM_EPS),
-                eta2: eta2.min(-NATURAL_PARAM_EPS),
-            })
-        }
-        NaturalParams::Dirichlet { eta } => {
-            if eta.iter().any(|v| v.is_nan()) {
-                return None;
-            }
-            // Clamp η_k > −1 + ε so that α_k = η_k + 1 > ε > 0.
-            let clamped: Vec<f64> = eta
-                .iter()
-                .map(|&e| e.max(-1.0 + NATURAL_PARAM_EPS))
-                .collect();
-            Some(NaturalParams::Dirichlet { eta: clamped })
-        }
+        NaturalParams::Dirichlet { eta } => eta.iter().all(|v| !v.is_nan()),
     }
 }
 

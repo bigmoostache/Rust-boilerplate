@@ -61,6 +61,15 @@ pub struct Graph {
     /// Pre-computed adjacency list: for each node index, a list of
     /// `(neighbor_index, edge_index, is_transposed)`.
     ///
+    /// **Convention**: if an edge is stored as `(A, B)` with coupling
+    /// matrix `B_AB ∈ ℝ^{d_A × d_B}`:
+    /// - Node A sees `(B_idx, edge_idx, false)` → use `B_AB`
+    /// - Node B sees `(A_idx, edge_idx, true)` → use `B_AB^T`
+    ///
+    /// This ensures that when computing the coupling contribution for
+    /// node `i`, the matrix `B_ij` always maps from `ℝ^{d_j}` (neighbor)
+    /// to `ℝ^{d_i}` (self), regardless of edge storage order.
+    ///
     /// This is a read-only cache built at construction time — do not
     /// modify directly.
     pub adjacency: Vec<Vec<(usize, usize, bool)>>,
