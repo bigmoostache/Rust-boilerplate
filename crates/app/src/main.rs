@@ -191,14 +191,24 @@ fn run_infer(
 
     // Always print human-readable summary to stdout
     let mut stdout = std::io::stdout().lock();
+
+    // Graph dimensions
+    let n_nodes = graph.nodes.len();
+    let n_edges = graph.edges.len();
+    let n_obs: usize = graph.observations.values().map(Vec::len).sum();
+    let _r1 = writeln!(
+        stdout,
+        "Computed on {n_nodes} nodes, {n_edges} edges and {n_obs} observations.\n"
+    );
+
     if inference_result.converged {
-        let _r = writeln!(
+        let _r2 = writeln!(
             stdout,
             "Converged in {} iterations.\n",
             inference_result.iterations
         );
     } else {
-        let _r = writeln!(
+        let _r2 = writeln!(
             stdout,
             "Did NOT converge after {} iterations.\n",
             inference_result.iterations
