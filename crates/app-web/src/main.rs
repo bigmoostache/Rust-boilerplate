@@ -68,9 +68,17 @@ impl Model {
         self.posterior().posterior_mean()[0]
     }
 
+    fn display_sigma_sq(&self) -> f64 {
+        if self.measurements.is_empty() {
+            0.25
+        } else {
+            self.sigma_sq()
+        }
+    }
+
     fn posterior_std(&self) -> f64 {
         let nu = self.posterior().nu();
-        (self.sigma_sq() / nu).sqrt()
+        (self.display_sigma_sq() / nu).sqrt()
     }
 
     fn credible_interval(&self) -> (f64, f64) {
@@ -257,7 +265,7 @@ fn PosteriorCard(model: Signal<Model>) -> Element {
             }
             div { class: "stat-footer",
                 {
-                    let sigma_sq_over_nu = m.sigma_sq() / nu;
+                    let sigma_sq_over_nu = m.display_sigma_sq() / nu;
                     format!("ν = {nu:.4}  ·  σ²/ν = {sigma_sq_over_nu:.4}")
                 }
             }
