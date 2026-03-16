@@ -1,0 +1,17 @@
+[package]
+name = "exponential"
+description = "Generic exponential family distributions with conjugate Bayesian inference."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository = "https://github.com/gdraznieks/PCJ"
+readme = "../../README.md"
+keywords = ["bayesian", "exponential-family", "conjugate-prior", "statistics"]
+categories = ["mathematics", "science"]
+
+[dependencies]
+nalgebra = "0.33"
+
+[lints]
+workspace = true
