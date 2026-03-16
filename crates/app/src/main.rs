@@ -37,8 +37,8 @@ fn main() {
     let start = Instant::now();
     let out = &mut std::io::stdout();
 
-    // ── 1. Create N(μ=5, σ²=2) and inspect ─────────────────────────
-    let normal = match Normal1D::new(5.0, 2.0) {
+    // ── 1. Create N(μ=37, σ²=0.5) and inspect ─────────────────────────
+    let normal = match Normal1D::new(37.0, 0.5) {
         Ok(n) => n,
         Err(_e) => return,
     };
@@ -90,7 +90,7 @@ fn main() {
     wf!(out, "A(η)  = {:.6}", a);
     wf!(
         out,
-        "∇A(η) = [{:.6}, {:.6}]  (expect μ=5, μ²+σ²=27)",
+        "∇A(η) = [{:.6}, {:.6}]  (expect μ=37, μ²+σ²=1370.5)",
         get(&grad, 0),
         get(&grad, 1)
     );

@@ -1,0 +1,71 @@
+[package]
+name = "app-web"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Body temperature Bayesian inference webapp"
+repository = "https://github.com/gdraznieks/PCJ"
+readme = "../../README.md"
+keywords = ["bayesian", "dioxus", "webapp"]
+categories = ["web-programming"]
+
+[dependencies]
+dioxus = { version = "0.7", features = ["router"] }
+exponential = { path = "../exponential" }
+nalgebra = "0.33"
+
+[features]
+default = ["web"]
+web = ["dioxus/web"]
+desktop = ["dioxus/desktop"]
+
+[lints.rust]
+missing_docs = "allow"
+unused_results = "allow"
+unused_variables = "allow"
+unused_assignments = "allow"
+dead_code = "allow"
+unreachable_code = "allow"
+deprecated = "allow"
+missing_copy_implementations = "allow"
+missing_debug_implementations = "allow"
+
+[lints.clippy]
+missing_docs_in_private_items = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+print_stdout = "allow"
+use_debug = "allow"
+unused_self = "allow"
+unused_async = "allow"
+unwrap_used = "allow"
+expect_used = "allow"
+indexing_slicing = "allow"
+arithmetic_side_effects = "allow"
+cast_precision_loss = "allow"
+module_name_repetitions = "allow"
+wildcard_imports = "allow"
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+needless_pass_by_value = "allow"
+too_many_arguments = "allow"
+missing_const_for_fn = "allow"
+missing_trait_methods = "allow"
+cargo_common_metadata = "allow"
+pub_use = "allow"
+shadow_unrelated = "allow"
+similar_names = "allow"
+many_single_char_names = "allow"
+items_after_statements = "allow"
+single_match_else = "allow"
+redundant_closure_for_method_calls = "allow"
+unused_result_ok = "allow"
+float_cmp = "allow"
+missing_assert_message = "allow"
+tests_outside_test_module = "allow"
+panic = "allow"
+unreachable = "allow"
+partial_pub_fields = "allow"
+exhaustive_enums = "allow"
+exhaustive_structs = "allow"
