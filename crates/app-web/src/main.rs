@@ -1,116 +1,179 @@
-//! Body temperature Bayesian inference webapp.
-//!
-//! Single-page app at `/body-temperature` that:
-//! - Shows posterior distribution for true body temperature θ
-//! - Allows CRUD of thermometer measurements
-//! - Updates posterior live as measurements are added/removed
-//!
-//! Model:
-//! - Likelihood: x ~ N(θ, σ²_thermometer) with σ_thermometer = 0.5°C
-//! - Prior: Conjugate prior with ν₀ = 1/1000 (very weak), μ₀ = 37.0°C
-//! - Posterior: N(λₙ[0]/νₙ, σ²_thermometer/νₙ)
-
 use dioxus::prelude::*;
 use exponential::inference::ConjugatePrior;
 use exponential::laws::gaussian::Normal1D;
 use nalgebra::DVector;
 
-/// Thermometer measurement with ID and value.
+// ─── Model ──────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, PartialEq)]
 struct Measurement {
     id: u64,
     value: f64,
 }
 
-/// Bayesian model for body temperature inference.
 #[derive(Debug, Clone)]
-struct BodyTempModel {
-    /// Conjugate prior for the Normal distribution.
-    prior: ConjugatePrior,
-    /// Likelihood distribution (known variance).
-    likelihood: Normal1D,
-    /// All measurements taken.
+struct Model {
     measurements: Vec<Measurement>,
-    /// Next measurement ID.
     next_id: u64,
+    nu0: f64,
+    sigma_thermometer: f64,
 }
 
-impl BodyTempModel {
-    /// Create a new model with epidemiological prior.
+impl Model {
     fn new() -> Self {
-        // Thermometer uncertainty: σ = 0.5°C → σ² = 0.25
-        let likelihood = Normal1D::new(0.0, 0.25).expect("valid variance");
-
-        // Prior: ν₀ = 1/1000, μ₀ = 37.0°C
-        let mu0 = 37.0;
-        let nu0 = 0.001;
-        // λ₀ = ν₀ * (μ₀, μ₀² + σ²)
-        let lambda0 = DVector::from_vec(vec![nu0 * mu0, nu0 * (mu0 * mu0 + 0.25)]);
-        let prior = ConjugatePrior::new(lambda0, nu0).expect("valid prior");
-
         Self {
-            prior,
-            likelihood,
             measurements: Vec::new(),
             next_id: 1,
+            nu0: 0.001,
+            sigma_thermometer: 0.5,
         }
     }
 
-    /// Add a measurement and update posterior.
-    fn add_measurement(&mut self, value: f64) {
+    fn sigma_sq(&self) -> f64 {
+        self.sigma_thermometer * self.sigma_thermometer
+    }
+
+    fn prior(&self) -> ConjugatePrior {
+        let mu0 = 37.0;
+        let sigma_sq = self.sigma_sq();
+        let lambda0 = DVector::from_vec(vec![self.nu0 * mu0, self.nu0 * (mu0 * mu0 + sigma_sq)]);
+        ConjugatePrior::new(lambda0, self.nu0).expect("valid prior")
+    }
+
+    fn likelihood(&self) -> Normal1D {
+        Normal1D::new(0.0, self.sigma_sq()).expect("valid variance")
+    }
+
+    fn posterior(&self) -> ConjugatePrior {
+        let prior = self.prior();
+        let likelihood = self.likelihood();
+        let data: Vec<f64> = self.measurements.iter().map(|m| m.value).collect();
+        if data.is_empty() {
+            prior
+        } else {
+            prior
+                .update_batch(&likelihood, &data)
+                .expect("valid update")
+        }
+    }
+
+    fn posterior_mean(&self) -> f64 {
+        self.posterior().posterior_mean()[0]
+    }
+
+    fn posterior_std(&self) -> f64 {
+        let nu = self.posterior().nu();
+        (self.sigma_sq() / nu).sqrt()
+    }
+
+    fn credible_interval(&self) -> (f64, f64) {
+        let m = self.posterior_mean();
+        let s = self.posterior_std();
+        (m - 1.96 * s, m + 1.96 * s)
+    }
+
+    fn add(&mut self, value: f64) {
         let id = self.next_id;
         self.next_id += 1;
         self.measurements.push(Measurement { id, value });
-        self.update_posterior();
     }
 
-    /// Remove a measurement by ID and update posterior.
-    fn remove_measurement(&mut self, id: u64) {
+    fn remove(&mut self, id: u64) {
         self.measurements.retain(|m| m.id != id);
-        self.update_posterior();
     }
+}
 
-    /// Recompute posterior from all measurements.
-    fn update_posterior(&mut self) {
-        // Reset to prior
-        let mu0 = 37.0;
-        let nu0 = 0.001;
-        let lambda0 = DVector::from_vec(vec![nu0 * mu0, nu0 * (mu0 * mu0 + 0.25)]);
-        self.prior = ConjugatePrior::new(lambda0, nu0).expect("valid prior");
+// ─── Bell curve helpers ─────────────────────────────────────────
 
-        // Update with all measurements
-        let data: Vec<f64> = self.measurements.iter().map(|m| m.value).collect();
-        if !data.is_empty() {
-            self.prior = self
-                .prior
-                .update_batch(&self.likelihood, &data)
-                .expect("valid update");
+fn bell_curve_svg(mean: f64, std: f64, measurements: &[Measurement]) -> String {
+    let col_accent = "\x232563eb";
+    let col_fill = "\x23eff3fe";
+    let col_tick = "\x238b95a5";
+    let col_grid = "\x23e2e4e9";
+
+    let effective_std = if std > 5.0 { 5.0 } else { std };
+    let lo = mean - 4.0 * effective_std;
+    let hi = mean + 4.0 * effective_std;
+    let w = 720.0_f64;
+    let h = 200.0_f64;
+    let pad_top = 20.0_f64;
+    let pad_bot = 30.0_f64;
+    let plot_h = h - pad_top - pad_bot;
+    let base = h - pad_bot;
+
+    let n_points = 200;
+    let peak = 1.0 / (std * (2.0 * std::f64::consts::PI).sqrt());
+
+    let mut path = String::with_capacity(2048);
+    for i in 0..=n_points {
+        let frac = i as f64 / n_points as f64;
+        let x_val = lo + frac * (hi - lo);
+        let px = frac * w;
+        let z = (x_val - mean) / std;
+        let pdf = (-0.5 * z * z).exp() / (std * (2.0 * std::f64::consts::PI).sqrt());
+        let py = pad_top + plot_h * (1.0 - pdf / peak);
+        if i == 0 {
+            path.push_str(&format!("M{px:.1},{py:.1}"));
+        } else {
+            path.push_str(&format!(" L{px:.1},{py:.1}"));
         }
     }
 
-    /// Posterior mean (estimated true temperature).
-    fn posterior_mean(&self) -> f64 {
-        self.prior.posterior_mean()[0]
+    let fill_path = format!("{path} L{w:.1},{base:.1} L0,{base:.1} Z");
+
+    // Ticks
+    let mut ticks = String::new();
+    let tick_step = if effective_std > 2.0 {
+        2.0
+    } else if effective_std > 0.5 {
+        0.5
+    } else {
+        0.1
+    };
+    let first_tick = (lo / tick_step).ceil() * tick_step;
+    let mut t = first_tick;
+    while t <= hi {
+        let px = ((t - lo) / (hi - lo)) * w;
+        let y1 = base;
+        let y2 = y1 + 5.0;
+        let ty = y2 + 12.0;
+        ticks.push_str(&format!(
+            "<line x1=\"{px:.1}\" y1=\"{y1:.1}\" x2=\"{px:.1}\" y2=\"{y2:.1}\" stroke=\"{col_tick}\" stroke-width=\"1\"/>"
+        ));
+        ticks.push_str(&format!(
+            "<text x=\"{px:.1}\" y=\"{ty:.1}\" fill=\"{col_tick}\" font-size=\"10\" text-anchor=\"middle\" font-family=\"Inter, sans-serif\">{t:.1}</text>"
+        ));
+        t += tick_step;
     }
 
-    /// Posterior standard deviation.
-    fn posterior_std(&self) -> f64 {
-        let nu = self.prior.nu();
-        (0.25 / nu).sqrt() // σ²_thermometer = 0.25
+    // Data points
+    let mut dots = String::new();
+    for m in measurements {
+        let frac = (m.value - lo) / (hi - lo);
+        if (0.0..=1.0).contains(&frac) {
+            let px = frac * w;
+            dots.push_str(&format!(
+                "<circle cx=\"{px:.1}\" cy=\"{base:.1}\" r=\"4\" fill=\"{col_accent}\" stroke=\"white\" stroke-width=\"1.5\"/>"
+            ));
+        }
     }
 
-    /// 95% credible interval: mean ± 1.96 * std.
-    fn credible_interval(&self) -> (f64, f64) {
-        let mean = self.posterior_mean();
-        let std = self.posterior_std();
-        (mean - 1.96 * std, mean + 1.96 * std)
-    }
+    // Mean line
+    let mean_px = ((mean - lo) / (hi - lo)) * w;
 
-    /// Number of measurements.
-    fn count(&self) -> usize {
-        self.measurements.len()
-    }
+    format!(
+        "<svg viewBox=\"0 0 {w} {h}\" xmlns=\"http://www.w3.org/2000/svg\">\
+         <path d=\"{fill_path}\" fill=\"{col_fill}\" stroke=\"none\"/>\
+         <path d=\"{path}\" fill=\"none\" stroke=\"{col_accent}\" stroke-width=\"2\"/>\
+         <line x1=\"0\" y1=\"{base:.1}\" x2=\"{w}\" y2=\"{base:.1}\" stroke=\"{col_grid}\" stroke-width=\"1\"/>\
+         <line x1=\"{mean_px:.1}\" y1=\"{pad_top:.1}\" x2=\"{mean_px:.1}\" y2=\"{base:.1}\" stroke=\"{col_accent}\" stroke-width=\"1.5\" stroke-dasharray=\"4,3\"/>\
+         {ticks}\
+         {dots}\
+         </svg>"
+    )
 }
+
+// ─── App ────────────────────────────────────────────────────────
 
 fn main() {
     dioxus::launch(App);
@@ -118,256 +181,227 @@ fn main() {
 
 #[component]
 fn App() -> Element {
-    let model = use_signal(BodyTempModel::new);
+    let model = use_signal(Model::new);
 
     rsx! {
-        div {
-            class: "min-h-screen bg-gray-50",
-            Header {}
-            main {
-                class: "max-w-4xl mx-auto p-4",
-                BodyTemperaturePage { model }
+        div { class: "app-shell",
+            header { class: "app-header",
+                div { class: "header-inner",
+                    h1 { "Body Temperature" }
+                    span { class: "subtitle", "Bayesian inference" }
+                }
+            }
+            main { class: "app-main",
+                PosteriorCard { model }
+                ConfigCard { model }
+                InputCard { model }
+                ListCard { model }
             }
         }
     }
 }
 
-#[component]
-fn Header() -> Element {
-    rsx! {
-        header {
-            class: "bg-white shadow",
-            div {
-                class: "max-w-4xl mx-auto px-4 py-6",
-                h1 {
-                    class: "text-3xl font-bold text-gray-900",
-                    "🌡️ Body Temperature Bayesian Inference"
-                }
-                p {
-                    class: "text-gray-600 mt-2",
-                    "Estimate your true body temperature from thermometer measurements."
-                }
-            }
-        }
-    }
-}
+// ─── Posterior Card ──────────────────────────────────────────────
 
 #[component]
-fn BodyTemperaturePage(model: Signal<BodyTempModel>) -> Element {
-    let mut new_value = use_signal(String::new);
-
-    let on_add = move |_| {
-        if let Ok(value) = new_value().parse::<f64>() {
-            model.write().add_measurement(value);
-            new_value.set(String::new());
-        }
-    };
-
-    let on_remove = move |id: u64| {
-        model.write().remove_measurement(id);
-    };
+fn PosteriorCard(model: Signal<Model>) -> Element {
+    let m = model();
+    let mean = m.posterior_mean();
+    let std = m.posterior_std();
+    let (lo, hi) = m.credible_interval();
+    let nu = m.posterior().nu();
+    let count = m.measurements.len();
+    let svg_html = bell_curve_svg(mean, std, &m.measurements);
 
     rsx! {
-        div {
-            class: "space-y-8",
-            PosteriorDisplay { model }
-            MeasurementForm {
-                new_value,
-                on_add,
+        div { class: "card",
+            div { class: "card-header",
+                h2 { "Posterior distribution" }
+                span { class: "badge", "{count} measurement(s)" }
             }
-            MeasurementList {
-                model,
-                on_remove,
-            }
-            Explanation {}
-        }
-    }
-}
-
-#[component]
-fn PosteriorDisplay(model: Signal<BodyTempModel>) -> Element {
-    let mean = model().posterior_mean();
-    let std = model().posterior_std();
-    let (lower, upper) = model().credible_interval();
-    let count = model().count();
-
-    rsx! {
-        div {
-            class: "bg-white rounded-xl shadow p-6",
-            h2 {
-                class: "text-2xl font-bold text-gray-800 mb-4",
-                "Posterior Distribution"
-            }
-            div {
-                class: "grid grid-cols-1 md:grid-cols-3 gap-6",
-                div {
-                    class: "text-center p-4 bg-blue-50 rounded-lg",
-                    p {
-                        class: "text-sm text-blue-700 font-medium",
-                        "Estimated Temperature"
-                    }
-                    p {
-                        class: "text-3xl font-bold text-blue-900",
-                        "{mean:.2} °C"
-                    }
+            div { class: "card-body",
+                div { class: "bell-curve-container",
+                    div { dangerous_inner_html: "{svg_html}" }
                 }
-                div {
-                    class: "text-center p-4 bg-green-50 rounded-lg",
-                    p {
-                        class: "text-sm text-green-700 font-medium",
-                        "Uncertainty (σ)"
-                    }
-                    p {
-                        class: "text-3xl font-bold text-green-900",
-                        "{std:.3} °C"
-                    }
-                }
-                div {
-                    class: "text-center p-4 bg-purple-50 rounded-lg",
-                    p {
-                        class: "text-sm text-purple-700 font-medium",
-                        "95% Credible Interval"
-                    }
-                    p {
-                        class: "text-3xl font-bold text-purple-900",
-                        "[{lower:.2}, {upper:.2}] °C"
-                    }
-                }
-            }
-            p {
-                class: "text-gray-600 mt-4 text-center",
-                "Based on {count} measurement(s). Prior: N(37.0, 0.25) with ν₀=0.001."
-            }
-        }
-    }
-}
-
-#[component]
-fn MeasurementForm(new_value: Signal<String>, on_add: EventHandler<()>) -> Element {
-    rsx! {
-        div {
-            class: "bg-white rounded-xl shadow p-6",
-            h2 {
-                class: "text-2xl font-bold text-gray-800 mb-4",
-                "Add Measurement"
-            }
-            div {
-                class: "flex gap-4",
-                input {
-                    r#type: "number",
-                    step: "0.1",
-                    placeholder: "Temperature in °C (e.g., 36.8)",
-                    class: "flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500",
-                    value: "{new_value}",
-                    oninput: move |e| new_value.set(e.value()),
-                    onkeydown: move |e| {
-                        if e.key() == dioxus::prelude::Key::Enter {
-                            on_add.call(());
+                div { class: "stat-grid",
+                    div { class: "stat-card",
+                        div { class: "stat-label", "Estimated temperature" }
+                        div { class: "stat-value",
+                            "{mean:.2}"
+                            span { class: "stat-unit", "°C" }
                         }
-                    },
-                }
-                button {
-                    class: "px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500",
-                    onclick: move |_| on_add.call(()),
-                    "Add"
+                    }
+                    div { class: "stat-card",
+                        div { class: "stat-label", "Uncertainty (σ)" }
+                        div { class: "stat-value",
+                            "{std:.3}"
+                            span { class: "stat-unit", "°C" }
+                        }
+                    }
+                    div { class: "stat-card",
+                        div { class: "stat-label", "95% credible interval" }
+                        div { class: "stat-value",
+                            "[{lo:.2}, {hi:.2}]"
+                            span { class: "stat-unit", "°C" }
+                        }
+                    }
                 }
             }
-            p {
-                class: "text-gray-500 text-sm mt-2",
-                "Thermometer uncertainty: ±0.5°C. Enter a value and press Add or Enter."
+            div { class: "stat-footer",
+                {
+                    let sigma_sq_over_nu = m.sigma_sq() / nu;
+                    format!("ν = {nu:.4}  ·  σ²/ν = {sigma_sq_over_nu:.4}")
+                }
             }
         }
     }
 }
 
+// ─── Configuration Card ─────────────────────────────────────────
+
 #[component]
-fn MeasurementList(model: Signal<BodyTempModel>, on_remove: EventHandler<u64>) -> Element {
+fn ConfigCard(model: Signal<Model>) -> Element {
+    let nu0 = model().nu0;
+    let sigma = model().sigma_thermometer;
+
+    // For ν₀ slider: log scale from 0.0001 to 100
+    let nu0_log = nu0.ln();
+    let nu0_min = 0.0001_f64.ln();
+    let nu0_max = 100.0_f64.ln();
+
+    rsx! {
+        div { class: "card",
+            div { class: "card-header",
+                h2 { "Configuration" }
+            }
+            div { class: "card-body",
+                div { class: "config-grid",
+                    div { class: "slider-group",
+                        div { class: "slider-label",
+                            span { class: "slider-label-text", "Prior strength (ν₀)" }
+                            span { class: "slider-label-value", "{nu0:.4}" }
+                        }
+                        input {
+                            r#type: "range",
+                            min: "{nu0_min}",
+                            max: "{nu0_max}",
+                            step: "0.01",
+                            value: "{nu0_log}",
+                            oninput: move |e| {
+                                if let Ok(v) = e.value().parse::<f64>() {
+                                    model.write().nu0 = v.exp();
+                                }
+                            },
+                        }
+                        span { class: "slider-hint",
+                            "Low = weak prior (data dominates). High = strong prior (prior dominates)."
+                        }
+                    }
+                    div { class: "slider-group",
+                        div { class: "slider-label",
+                            span { class: "slider-label-text", "Thermometer uncertainty (σ)" }
+                            span { class: "slider-label-value", "{sigma:.2} °C" }
+                        }
+                        input {
+                            r#type: "range",
+                            min: "0.05",
+                            max: "3.0",
+                            step: "0.05",
+                            value: "{sigma}",
+                            oninput: move |e| {
+                                if let Ok(v) = e.value().parse::<f64>() {
+                                    model.write().sigma_thermometer = v;
+                                }
+                            },
+                        }
+                        span { class: "slider-hint",
+                            "Standard deviation of the thermometer reading error in °C."
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── Input Card ─────────────────────────────────────────────────
+
+#[component]
+fn InputCard(model: Signal<Model>) -> Element {
+    let mut input_val = use_signal(String::new);
+
+    let mut submit = move || {
+        if let Ok(v) = input_val().parse::<f64>() {
+            model.write().add(v);
+            input_val.set(String::new());
+        }
+    };
+
+    rsx! {
+        div { class: "card",
+            div { class: "card-header",
+                h2 { "Add measurement" }
+            }
+            div { class: "card-body",
+                div { class: "input-row",
+                    input {
+                        class: "input-field",
+                        r#type: "number",
+                        step: "0.1",
+                        placeholder: "e.g. 37.2",
+                        value: "{input_val}",
+                        oninput: move |e| input_val.set(e.value()),
+                        onkeydown: move |e| {
+                            if e.key() == Key::Enter {
+                                submit();
+                            }
+                        },
+                    }
+                    button {
+                        class: "btn btn-primary",
+                        onclick: move |_| submit(),
+                        "Add"
+                    }
+                }
+                p { class: "input-hint", "Temperature in °C. Press Enter or click Add." }
+            }
+        }
+    }
+}
+
+// ─── Measurement List Card ──────────────────────────────────────
+
+#[component]
+fn ListCard(model: Signal<Model>) -> Element {
     let measurements = model().measurements.clone();
+    let count = measurements.len();
 
     rsx! {
-        div {
-            class: "bg-white rounded-xl shadow p-6",
-            h2 {
-                class: "text-2xl font-bold text-gray-800 mb-4",
-                "Measurements ({measurements.len()})"
+        div { class: "card",
+            div { class: "card-header",
+                h2 { "Measurements" }
+                span { class: "badge", "{count}" }
             }
-            if measurements.is_empty() {
-                p {
-                    class: "text-gray-500 text-center py-8",
-                    "No measurements yet. Add one above."
-                }
-            } else {
-                ul {
-                    class: "space-y-3",
-                    for m in measurements {
-                        li {
-                            key: "{m.id}",
-                            class: "flex items-center justify-between p-4 border border-gray-200 rounded-lg",
-                            div {
-                                class: "flex items-center gap-4",
-                                span {
-                                    class: "text-2xl text-gray-400",
-                                    "🌡️"
+            div { class: "card-body",
+                if measurements.is_empty() {
+                    p { class: "empty-state", "No measurements yet." }
+                } else {
+                    ul { class: "measurement-list",
+                        for m in measurements {
+                            li { key: "{m.id}",
+                                class: "measurement-item",
+                                div { class: "measurement-left",
+                                    span { class: "measurement-value", "{m.value:.2} °C" }
+                                    span { class: "measurement-meta", "#{m.id}" }
                                 }
-                                div {
-                                    span {
-                                        class: "text-lg font-semibold text-gray-800",
-                                        "{m.value:.2} °C"
-                                    }
-                                    p {
-                                        class: "text-sm text-gray-500",
-                                        "ID: {m.id}"
-                                    }
+                                button {
+                                    class: "btn btn-danger-ghost",
+                                    onclick: move |_| model.write().remove(m.id),
+                                    "Remove"
                                 }
-                            }
-                            button {
-                                class: "px-4 py-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg",
-                                onclick: move |_| on_remove.call(m.id),
-                                "Remove"
                             }
                         }
                     }
-                }
-            }
-        }
-    }
-}
-
-#[component]
-fn Explanation() -> Element {
-    rsx! {
-        div {
-            class: "bg-white rounded-xl shadow p-6",
-            h2 {
-                class: "text-2xl font-bold text-gray-800 mb-4",
-                "How It Works"
-            }
-            div {
-                class: "prose prose-blue max-w-none",
-                p {
-                    "This app uses Bayesian inference to estimate your true body temperature θ from thermometer measurements."
-                }
-                ul {
-                    li {
-                        strong { "Likelihood: " }
-                        "Each measurement x is assumed to follow a Normal distribution N(θ, σ²) with σ = 0.5°C (thermometer uncertainty)."
-                    }
-                    li {
-                        strong { "Prior: " }
-                        "We start with a weak prior centered at 37.0°C (standard human body temperature) with pseudo‑observation count ν₀ = 1/1000."
-                    }
-                    li {
-                        strong { "Posterior: " }
-                        "After each measurement, we update the posterior distribution using the conjugate prior for the Normal distribution."
-                    }
-                    li {
-                        strong { "Result: " }
-                        "The posterior mean is our best estimate of θ; the posterior standard deviation quantifies our uncertainty."
-                    }
-                }
-                p {
-                    class: "text-sm text-gray-500 mt-4",
-                    "The math is implemented in the `exponential` crate using the general exponential‑family conjugate‑prior framework."
                 }
             }
         }

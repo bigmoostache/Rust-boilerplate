@@ -1,0 +1,13 @@
+[application]
+name = "body-temperature"
+
+[web.app]
+title = "Body Temperature — Bayesian Inference"
+
+[web.resource]
+style = ["assets/style.css"]
+script = []
+
+[web.resource.dev]
+style = ["assets/style.css"]
+script = []
