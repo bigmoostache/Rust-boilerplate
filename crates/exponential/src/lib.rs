@@ -25,3 +25,5 @@ pub mod distribution;
 pub mod errors;
 /// The [`ConjugatePrior`](inference::ConjugatePrior) struct.
 pub mod inference;
+/// Concrete exponential family distributions (Normal, etc.).
+pub mod laws;
