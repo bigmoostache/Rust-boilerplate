@@ -3,6 +3,8 @@ use exponential::inference::ConjugatePrior;
 use exponential::laws::gaussian::Normal1D;
 use nalgebra::DVector;
 
+const STYLE: Asset = asset!("/assets/style.css");
+
 // ─── Model ──────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,8 +37,13 @@ impl Model {
 
     fn prior(&self) -> ConjugatePrior {
         let mu0 = 37.0;
-        let sigma_sq = self.sigma_sq();
-        let lambda0 = DVector::from_vec(vec![self.nu0 * mu0, self.nu0 * (mu0 * mu0 + sigma_sq)]);
+        // Prior uses a fixed reference variance so that changing the
+        // thermometer slider doesn't alter the prior when there is no data.
+        let prior_sigma_sq = 0.25;
+        let lambda0 = DVector::from_vec(vec![
+            self.nu0 * mu0,
+            self.nu0 * (mu0 * mu0 + prior_sigma_sq),
+        ]);
         ConjugatePrior::new(lambda0, self.nu0).expect("valid prior")
     }
 
@@ -95,9 +102,9 @@ fn bell_curve_svg(mean: f64, std: f64, measurements: &[Measurement]) -> String {
     let lo = mean - 4.0 * effective_std;
     let hi = mean + 4.0 * effective_std;
     let w = 720.0_f64;
-    let h = 200.0_f64;
-    let pad_top = 20.0_f64;
-    let pad_bot = 30.0_f64;
+    let h = 320.0_f64;
+    let pad_top = 24.0_f64;
+    let pad_bot = 36.0_f64;
     let plot_h = h - pad_top - pad_bot;
     let base = h - pad_bot;
 
@@ -135,13 +142,13 @@ fn bell_curve_svg(mean: f64, std: f64, measurements: &[Measurement]) -> String {
     while t <= hi {
         let px = ((t - lo) / (hi - lo)) * w;
         let y1 = base;
-        let y2 = y1 + 5.0;
-        let ty = y2 + 12.0;
+        let y2 = y1 + 6.0;
+        let ty = y2 + 14.0;
         ticks.push_str(&format!(
             "<line x1=\"{px:.1}\" y1=\"{y1:.1}\" x2=\"{px:.1}\" y2=\"{y2:.1}\" stroke=\"{col_tick}\" stroke-width=\"1\"/>"
         ));
         ticks.push_str(&format!(
-            "<text x=\"{px:.1}\" y=\"{ty:.1}\" fill=\"{col_tick}\" font-size=\"10\" text-anchor=\"middle\" font-family=\"Inter, sans-serif\">{t:.1}</text>"
+            "<text x=\"{px:.1}\" y=\"{ty:.1}\" fill=\"{col_tick}\" font-size=\"12\" text-anchor=\"middle\" font-family=\"Inter, sans-serif\">{t:.1}</text>"
         ));
         t += tick_step;
     }
@@ -153,7 +160,7 @@ fn bell_curve_svg(mean: f64, std: f64, measurements: &[Measurement]) -> String {
         if (0.0..=1.0).contains(&frac) {
             let px = frac * w;
             dots.push_str(&format!(
-                "<circle cx=\"{px:.1}\" cy=\"{base:.1}\" r=\"4\" fill=\"{col_accent}\" stroke=\"white\" stroke-width=\"1.5\"/>"
+                "<circle cx=\"{px:.1}\" cy=\"{base:.1}\" r=\"5.5\" fill=\"{col_accent}\" stroke=\"white\" stroke-width=\"2\"/>"
             ));
         }
     }
@@ -164,7 +171,7 @@ fn bell_curve_svg(mean: f64, std: f64, measurements: &[Measurement]) -> String {
     format!(
         "<svg viewBox=\"0 0 {w} {h}\" xmlns=\"http://www.w3.org/2000/svg\">\
          <path d=\"{fill_path}\" fill=\"{col_fill}\" stroke=\"none\"/>\
-         <path d=\"{path}\" fill=\"none\" stroke=\"{col_accent}\" stroke-width=\"2\"/>\
+         <path d=\"{path}\" fill=\"none\" stroke=\"{col_accent}\" stroke-width=\"2.5\"/>\
          <line x1=\"0\" y1=\"{base:.1}\" x2=\"{w}\" y2=\"{base:.1}\" stroke=\"{col_grid}\" stroke-width=\"1\"/>\
          <line x1=\"{mean_px:.1}\" y1=\"{pad_top:.1}\" x2=\"{mean_px:.1}\" y2=\"{base:.1}\" stroke=\"{col_accent}\" stroke-width=\"1.5\" stroke-dasharray=\"4,3\"/>\
          {ticks}\
@@ -184,6 +191,7 @@ fn App() -> Element {
     let model = use_signal(Model::new);
 
     rsx! {
+        document::Stylesheet { href: STYLE }
         div { class: "app-shell",
             header { class: "app-header",
                 div { class: "header-inner",
