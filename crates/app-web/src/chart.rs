@@ -1,5 +1,5 @@
 use crate::math::gaussian_pdf;
-use crate::model::{NigPosterior, MU_0};
+use crate::model::{MU_0, NigPosterior};
 
 pub fn build_posterior_svg(post: &NigPosterior, obs: &[f64]) -> String {
     let w = 720.0_f64;

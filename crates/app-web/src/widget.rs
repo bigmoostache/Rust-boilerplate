@@ -1,14 +1,14 @@
 use dioxus::prelude::*;
 
 use crate::chart::build_posterior_svg;
-use crate::components::{MathInline, SectionWrap};
-use crate::model::{compute_posterior, ALPHA_0, MU_0};
+use crate::components::{MathInline, SectionWrap, retrigger_katex};
+use crate::model::{ALPHA_0, MU_0, compute_posterior};
 
 #[component]
 pub fn Section7() -> Element {
     rsx! {
         SectionWrap { number: "§ 7", title: "Simulation interactive",
-            p { "Ajoutez des mesures et observez la mise à jour bayésienne en temps réel. Les hyperparamètres ", MathInline { "λ" }, " et ", MathInline { "ν" }, " s\u{2019}accumulent ; le posterior (courbe rouge) se concentre autour de la vraie température." }
+            p { "Ajoutez des mesures et observez la mise à jour bayésienne en temps réel. Les hyperparamètres ", MathInline { tex: r"\boldsymbol{{\lambda}}" }, " et ", MathInline { tex: r"\nu" }, " s\u{2019}accumulent ; le posterior (courbe rouge) se concentre autour de la vraie température." }
             BayesWidget {}
         }
     }
@@ -22,6 +22,7 @@ fn BayesWidget() -> Element {
     let data = obs();
     let post = compute_posterior(&data);
     let svg = build_posterior_svg(&post, &data);
+    use_effect(retrigger_katex);
 
     let n = data.len();
     let stats: Vec<(&str, String, bool)> = if n > 0 {

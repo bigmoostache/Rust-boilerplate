@@ -11,8 +11,7 @@ pub fn log_gamma(z: f64) -> f64 {
         1.505_632_735_149_312e-7,
     ];
     if z < 0.5 {
-        return (std::f64::consts::PI / (std::f64::consts::PI * z).sin()).ln()
-            - log_gamma(1.0 - z);
+        return (std::f64::consts::PI / (std::f64::consts::PI * z).sin()).ln() - log_gamma(1.0 - z);
     }
     let zz = z - 1.0;
     let mut x = c[0];

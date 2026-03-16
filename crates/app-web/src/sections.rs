@@ -8,17 +8,32 @@ use crate::components::{Boxed, Callout, MathBlock, MathInline, SectionWrap};
 pub fn Section1() -> Element {
     rsx! {
         SectionWrap { number: "§ 1", title: "La famille exponentielle",
-            p { "Une distribution appartient à la ", em { "famille exponentielle" }, " si sa densité s\u{2019}écrit sous la forme canonique :" }
-            MathBlock { label: "Définition — forme canonique",
-                "p(x | η) = h(x) · exp( ηᵀ T(x) − A(η) )"
+            p {
+                "Une distribution appartient à la ", em { "famille exponentielle" },
+                " si sa densité s\u{2019}écrit sous la forme canonique :"
             }
-            p { "Les trois ingrédients : ", MathInline { "h(x)" }, " la mesure de base, ", MathInline { "T(x)" }, " la ", em { "statistique suffisante" }, ", et ", MathInline { "η" }, " le ", em { "paramètre naturel" }, ". La ", em { "log-partition" }, " ", MathInline { "A(η)" }, " assure la normalisation :" }
-            MathBlock { "A(η) = log ∫ h(x) · exp( ηᵀ T(x) ) dx" }
-            p { "Ses dérivées donnent les moments de ", MathInline { "T(x)" }, " :" }
-            MathBlock { "∇ A(η) = E[T(x)],    ∇² A(η) = Var[T(x)]" }
+            MathBlock { label: "Définition — forme canonique",
+                tex: r"p(x \mid \boldsymbol{{\eta}}) \;=\; h(x)\,\exp\!\bigl(\boldsymbol{{\eta}}^\top T(x) - A(\boldsymbol{{\eta}})\bigr)"
+            }
+            p {
+                "Les trois ingrédients : ", MathInline { tex: r"h(x)" },
+                " la mesure de base, ", MathInline { tex: r"T(x)" },
+                " la ", em { "statistique suffisante" }, ", et ",
+                MathInline { tex: r"\boldsymbol{{\eta}}" }, " le ",
+                em { "paramètre naturel" }, ". La ", em { "log-partition" },
+                " ", MathInline { tex: r"A(\boldsymbol{{\eta}})" },
+                " assure la normalisation :"
+            }
+            MathBlock { tex: r"A(\boldsymbol{{\eta}}) = \log \int h(x)\,\exp\!\bigl(\boldsymbol{{\eta}}^\top T(x)\bigr)\,dx" }
+            p { "Ses dérivées donnent les moments de ", MathInline { tex: r"T(x)" }, " :" }
+            MathBlock { tex: r"\nabla A(\boldsymbol{{\eta}}) = \mathbb{{E}}[T(x)], \qquad \nabla^2 A(\boldsymbol{{\eta}}) = \mathrm{{Var}}[T(x)]" }
             Callout {
                 strong { "Intuition clé. " }
-                "Toute l\u{2019}information sur ", MathInline { "η" }, " contenue dans une observation ", MathInline { "x" }, " est capturée par ", MathInline { "T(x)" }, ". Deux observations avec le même ", MathInline { "T(x)" }, " sont ", em { "équivalentes" }, " pour l\u{2019}inférence."
+                "Toute l\u{2019}information sur ", MathInline { tex: r"\boldsymbol{{\eta}}" },
+                " contenue dans une observation ", MathInline { tex: r"x" },
+                " est capturée par ", MathInline { tex: r"T(x)" },
+                ". Deux observations avec le même ", MathInline { tex: r"T(x)" },
+                " sont ", em { "équivalentes" }, " pour l\u{2019}inférence."
             }
         }
     }
@@ -30,9 +45,20 @@ pub fn Section1() -> Element {
 pub fn Section2() -> Element {
     rsx! {
         SectionWrap { number: "§ 2", title: "Vraisemblance de n observations",
-            p { "Pour ", MathInline { "n" }, " observations i.i.d., la vraisemblance se factorise élégamment :" }
-            MathBlock { "p(x₁,…,xₙ | η) = ∏ᵢ h(xᵢ) · exp( ηᵀ Σᵢ T(xᵢ) − n A(η) )" }
-            p { "La vraisemblance ne dépend des données qu\u{2019}à travers ", MathInline { "Σᵢ T(xᵢ)" }, ". C\u{2019}est le théorème de suffisance de Fisher — ce vecteur de dimension fixe résume intégralement l\u{2019}information de ", MathInline { "n" }, " observations, quelle que soit ", MathInline { "n" }, "." }
+            p {
+                "Pour ", MathInline { tex: r"n" },
+                " observations i.i.d., la vraisemblance se factorise élégamment :"
+            }
+            MathBlock {
+                tex: r"p(x_1,\ldots,x_n \mid \boldsymbol{{\eta}}) = \prod_i h(x_i) \;\cdot\; \exp\!\Bigl(\boldsymbol{{\eta}}^\top \sum_i T(x_i) - n\,A(\boldsymbol{{\eta}})\Bigr)"
+            }
+            p {
+                "La vraisemblance ne dépend des données qu\u{2019}à travers ",
+                MathInline { tex: r"\textstyle\sum_i T(x_i)" },
+                ". C\u{2019}est le théorème de suffisance de Fisher — ce vecteur de dimension fixe résume intégralement l\u{2019}information de ",
+                MathInline { tex: r"n" }, " observations, quelle que soit ",
+                MathInline { tex: r"n" }, "."
+            }
         }
     }
 }
@@ -43,16 +69,36 @@ pub fn Section2() -> Element {
 pub fn Section3() -> Element {
     rsx! {
         SectionWrap { number: "§ 3", title: "Construction du prior conjugué joint",
-            p { "On cherche un prior ", MathInline { "p(η)" }, " tel que le posterior reste dans la ", em { "même famille paramétrique" }, ". La forme conjuguée naturelle est :" }
-            Boxed { title: "Théorème — Prior conjugué universel",
-                "p(η | λ₀, ν₀) ∝ exp( ηᵀ λ₀ − ν₀ A(η) ),    λ₀ ∈ ℝᵏ, ν₀ > 0"
+            p {
+                "On cherche un prior ", MathInline { tex: r"p(\boldsymbol{{\eta}})" },
+                " tel que le posterior reste dans la ",
+                em { "même famille paramétrique" }, ". La forme conjuguée naturelle est :"
             }
-            p { "Ce prior est normalisable si et seulement si ", MathInline { "ν₀ > 0" }, " et ", MathInline { "λ₀/ν₀" }, " est dans l\u{2019}intérieur du domaine naturel de ", MathInline { "η" }, "." }
+            Boxed { title: "Théorème — Prior conjugué universel",
+                MathBlock {
+                    tex: r"p(\boldsymbol{{\eta}} \mid \boldsymbol{{\lambda}}_0,\,\nu_0) \;\propto\; \exp\!\bigl(\boldsymbol{{\eta}}^\top \boldsymbol{{\lambda}}_0 - \nu_0\,A(\boldsymbol{{\eta}})\bigr), \quad \boldsymbol{{\lambda}}_0 \in \mathbb{{R}}^k,\; \nu_0 > 0"
+                }
+            }
+            p {
+                "Ce prior est normalisable si et seulement si ",
+                MathInline { tex: r"\nu_0 > 0" }, " et ",
+                MathInline { tex: r"\boldsymbol{{\lambda}}_0/\nu_0" },
+                " est dans l\u{2019}intérieur du domaine naturel de ",
+                MathInline { tex: r"\boldsymbol{{\eta}}" }, "."
+            }
             h3 { "Interprétation des hyperparamètres" }
             DataTable3 {}
             Callout {
                 strong { "λ comme mémoire suffisante. " }
-                MathInline { "λ" }, " est une ", em { "urne" }, " qui accumule les statistiques suffisantes. ", MathInline { "ν" }, " est son poids. ", MathInline { "λ/ν" }, " est sa moyenne. Le prior initialise l\u{2019}urne avec ", MathInline { "ν₀" }, " billes fictives ; chaque observation verse ", MathInline { "T(xᵢ)" }, " dans l\u{2019}urne et incrémente ", MathInline { "ν" }, " d\u{2019}une unité."
+                MathInline { tex: r"\boldsymbol{{\lambda}}" },
+                " est une ", em { "urne" },
+                " qui accumule les statistiques suffisantes. ",
+                MathInline { tex: r"\nu" }, " est son poids. ",
+                MathInline { tex: r"\boldsymbol{{\lambda}}/\nu" },
+                " est sa moyenne. Le prior initialise l\u{2019}urne avec ",
+                MathInline { tex: r"\nu_0" }, " billes fictives ; chaque observation verse ",
+                MathInline { tex: r"T(x_i)" },
+                " dans l\u{2019}urne et incrémente ", MathInline { tex: r"\nu" }, " d\u{2019}une unité."
             }
         }
     }
@@ -66,9 +112,9 @@ fn DataTable3() -> Element {
                 th { "Hyperparamètre" } th { "Interprétation" } th { "Analogie" }
             }}
             tbody {
-                tr { td { MathInline { "λ₀" } } td { "Statistiques suffisantes fictives a priori" } td { "Billes initiales dans une urne" } }
-                tr { td { MathInline { "ν₀" } } td { "Poids du prior (observations fictives)" } td { "Nombre de billes initiales" } }
-                tr { td { MathInline { "λ₀/ν₀" } } td { "Valeur centrale a priori de η" } td { "Moyenne des billes initiales" } }
+                tr { td { MathInline { tex: r"\boldsymbol{{\lambda}}_0" } } td { "Statistiques suffisantes fictives a priori" } td { "Billes initiales dans une urne" } }
+                tr { td { MathInline { tex: r"\nu_0" } } td { "Poids du prior (observations fictives)" } td { "Nombre de billes initiales" } }
+                tr { td { MathInline { tex: r"\boldsymbol{{\lambda}}_0 / \nu_0" } } td { "Valeur centrale a priori de η" } td { "Moyenne des billes initiales" } }
             }
         }
     }
@@ -81,15 +127,29 @@ pub fn Section4() -> Element {
     rsx! {
         SectionWrap { number: "§ 4", title: "La mise à jour bayésienne — deux additions",
             p { "Le posterior s\u{2019}obtient par le théorème de Bayes :" }
-            MathBlock { "p(η | x) ∝ exp( ηᵀ Σᵢ T(xᵢ) − n A(η) ) · exp( ηᵀ λ₀ − ν₀ A(η) )\n       = exp( ηᵀ (λ₀ + Σᵢ T(xᵢ)) − (ν₀ + n) A(η) )" }
+            MathBlock {
+                tex: r"p(\boldsymbol{{\eta}} \mid \mathbf{{x}}) \;\propto\; \exp\!\Bigl(\boldsymbol{{\eta}}^\top \bigl(\boldsymbol{{\lambda}}_0 + \textstyle\sum_i T(x_i)\bigr) - (\nu_0 + n)\,A(\boldsymbol{{\eta}})\Bigr)"
+            }
             Boxed { title: "Règle de mise à jour — universelle",
-                "λₙ = λ₀ + Σᵢ T(xᵢ),    νₙ = ν₀ + n"
+                MathBlock {
+                    tex: r"\boldsymbol{{\lambda}}_n = \boldsymbol{{\lambda}}_0 + \sum_i T(x_i), \qquad \nu_n = \nu_0 + n"
+                }
             }
             p { "C\u{2019}est la beauté de la conjugaison : toute la complexité bayésienne se réduit à deux additions." }
             h3 { "Structure de shrinkage" }
-            p { "Le ratio ", MathInline { "λₙ/νₙ" }, " interpole entre prior et données :" }
-            MathBlock { "λₙ/νₙ = (ν₀/(ν₀+n)) · (λ₀/ν₀) + (n/(ν₀+n)) · T̄" }
-            p { "Quand ", MathInline { "n → ∞" }, ", les données écrasent le prior (", MathInline { "λₙ/νₙ → T̄" }, ") et on retrouve l\u{2019}estimateur fréquentiste." }
+            p {
+                "Le ratio ", MathInline { tex: r"\boldsymbol{{\lambda}}_n / \nu_n" },
+                " interpole entre prior et données :"
+            }
+            MathBlock {
+                tex: r"\frac{{\boldsymbol{{\lambda}}_n}}{{\nu_n}} = \frac{{\nu_0}}{{\nu_0+n}} \cdot \frac{{\boldsymbol{{\lambda}}_0}}{{\nu_0}} + \frac{{n}}{{\nu_0+n}} \cdot \bar{{T}}"
+            }
+            p {
+                "Quand ", MathInline { tex: r"n \to \infty" },
+                ", les données écrasent le prior (",
+                MathInline { tex: r"\boldsymbol{{\lambda}}_n/\nu_n \to \bar{{T}}" },
+                ") et on retrouve l\u{2019}estimateur fréquentiste."
+            }
         }
     }
 }
@@ -100,14 +160,25 @@ pub fn Section4() -> Element {
 pub fn Section5() -> Element {
     rsx! {
         SectionWrap { number: "§ 5", title: "Application : la loi gaussienne",
-            p { "On pose ", MathInline { "X ~ N(μ, σ²)" }, ". La forme canonique donne :" }
-            MathBlock { label: "Identification des composantes",
-                "h(x) = 1/√(2π),  T(x) = (x, x²)ᵀ\nη = (μ/σ², −1/(2σ²))ᵀ"
+            p {
+                "On pose ", MathInline { tex: r"X \sim \mathcal{{N}}(\mu,\,\sigma^2)" },
+                ". La forme canonique donne :"
             }
-            MathBlock { "A(η) = −η₁²/(4η₂) + ½ log(−π/η₂)" }
+            MathBlock { label: "Identification des composantes",
+                tex: r"h(x) = \frac{{1}}{{\sqrt{{2\pi}}}}, \quad T(x) = \begin{{pmatrix}} x \\ x^2 \end{{pmatrix}}, \quad \boldsymbol{{\eta}} = \begin{{pmatrix}} \mu/\sigma^2 \\ -1/(2\sigma^2) \end{{pmatrix}}"
+            }
+            MathBlock {
+                tex: r"A(\boldsymbol{{\eta}}) = -\frac{{\eta_1^2}}{{4\,\eta_2}} + \tfrac{{1}}{{2}}\ln\!\Bigl(-\frac{{\pi}}{{\eta_2}}\Bigr)"
+            }
             p { "La bijection s\u{2019}inverse :" }
-            MathBlock { "σ² = −1/(2η₂),    μ = −η₁/(2η₂)" }
-            p { "En revenant aux paramètres usuels, le prior conjugué se réduit à la loi ", strong { "Normale-Gamma Inverse" }, " NIG(μ₀, ν₀, α₀, β₀)." }
+            MathBlock {
+                tex: r"\sigma^2 = -\frac{{1}}{{2\,\eta_2}}, \qquad \mu = -\frac{{\eta_1}}{{2\,\eta_2}}"
+            }
+            p {
+                "En revenant aux paramètres usuels, le prior conjugué se réduit à la loi ",
+                strong { "Normale-Gamma Inverse" },
+                " ", MathInline { tex: r"\mathrm{{NIG}}(\mu_0,\,\nu_0,\,\alpha_0,\,\beta_0)" }, "."
+            }
             h3 { "Statistiques suffisantes gaussiennes" }
             DataTable5 {}
         }
@@ -120,9 +191,9 @@ fn DataTable5() -> Element {
         table { class: "data-table",
             thead { tr { th { "Composante" } th { "Statistique" } th { "Information portée" } }}
             tbody {
-                tr { td { MathInline { "T⁽¹⁾(x) = x" } } td { "valeur brute" } td { "Localisation → μ" } }
-                tr { td { MathInline { "T⁽²⁾(x) = x²" } } td { "carré" } td { "Dispersion → σ²" } }
-                tr { td { MathInline { "Σxᵢ, Σxᵢ²" } } td { "sommes" } td { "Tout ce qu\u{2019}il faut pour inférer (μ, σ²)" } }
+                tr { td { MathInline { tex: r"T^{{(1)}}(x) = x" } } td { "valeur brute" } td { "Localisation → μ" } }
+                tr { td { MathInline { tex: r"T^{{(2)}}(x) = x^2" } } td { "carré" } td { "Dispersion → σ²" } }
+                tr { td { MathInline { tex: r"\sum x_i,\;\sum x_i^2" } } td { "sommes" } td { "Tout ce qu\u{2019}il faut pour inférer (μ, σ²)" } }
             }
         }
     }
@@ -134,24 +205,35 @@ fn DataTable5() -> Element {
 pub fn Section6() -> Element {
     rsx! {
         SectionWrap { number: "§ 6", title: "Cas pratique : thermométrie bayésienne",
-            p { "On mesure la température frontale d\u{2019}un patient avec un thermomètre d\u{2019}incertitude ±0.5°C, et un prior épidémiologique très faible (", MathInline { "ν₀ = 0.001" }, ")." }
+            p {
+                "On mesure la température frontale d\u{2019}un patient avec un thermomètre d\u{2019}incertitude ±0.5°C, et un prior épidémiologique très faible (",
+                MathInline { tex: r"\nu_0 = 0.001" }, ")."
+            }
             h3 { "Calibration du prior" }
-            p { "L\u{2019}incertitude ±0.5°C correspond à environ 2σ, donc σ ≈ 0.25°C ⇒ σ² ≈ 0.0625. Avec μ₀ = 36.2°C :" }
+            p {
+                "L\u{2019}incertitude ±0.5°C correspond à environ ", MathInline { tex: r"2\sigma" },
+                ", donc ", MathInline { tex: r"\sigma \approx 0.25\,°\mathrm{{C}}" },
+                " ⇒ ", MathInline { tex: r"\sigma^2 \approx 0.0625" },
+                ". Avec ", MathInline { tex: r"\mu_0 = 36.2\,°\mathrm{{C}}" }, " :"
+            }
             MathBlock {
-                "λ₀ = ν₀ · (μ₀/σ₀², −1/(2σ₀²))ᵀ = (0.579, −0.008)ᵀ\nν₀ = 0.001"
+                tex: r"\boldsymbol{{\lambda}}_0 = \nu_0 \begin{{pmatrix}} \mu_0/\sigma_0^2 \\ -1/(2\sigma_0^2) \end{{pmatrix}} = \begin{{pmatrix}} 0.579 \\ -0.008 \end{{pmatrix}}, \quad \nu_0 = 0.001"
             }
             h3 { "Trois mesures, deux additions" }
             MeasurementTable6 {}
             Boxed { title: "Mise à jour",
-                "λ₃ = (0.579 + 114.9, −0.008 − 4400.85)ᵀ = (115.479, −4400.858)ᵀ\nν₃ = 3.001"
+                MathBlock {
+                    tex: r"\boldsymbol{{\lambda}}_3 = \begin{{pmatrix}} 0.579 + 114.9 \\ -0.008 - 4400.85 \end{{pmatrix}} = \begin{{pmatrix}} 115.479 \\ -4400.858 \end{{pmatrix}}, \quad \nu_3 = 3.001"
+                }
             }
             h3 { "Retour vers (μ, σ²)" }
             MathBlock {
-                "η₁ᵖᵒˢᵗ = 115.479/3.001 = 38.480\nη₂ᵖᵒˢᵗ = −4400.858/3.001 = −1466.46\nσ²ₚₒₛₜ = −1/(2η₂) ≈ 3.41×10⁻⁴  ⇒  σₚₒₛₜ ≈ 0.018°C\nμₚₒₛₜ = η₁ · σ² ≈ 38.30°C"
+                tex: r"\sigma^2_{{post}} = -\frac{{1}}{{2\,\eta_2}} \approx 3.41 \times 10^{{-4}} \;\Rightarrow\; \sigma_{{post}} \approx 0.018\,°\mathrm{{C}}, \qquad \mu_{{post}} \approx 38.30\,°\mathrm{{C}}"
             }
             Callout {
                 strong { "Réduction d\u{2019}incertitude. " }
-                "Trois mesures ont réduit σ de 0.25°C à 0.018°C — un facteur ×14. Le patient est clairement fébrile avec une certitude quasi-totale."
+                "Trois mesures ont réduit ", MathInline { tex: r"\sigma" },
+                " de 0.25°C à 0.018°C — un facteur ×14. Le patient est clairement fébrile avec une certitude quasi-totale."
             }
         }
     }
@@ -161,7 +243,7 @@ pub fn Section6() -> Element {
 fn MeasurementTable6() -> Element {
     rsx! {
         table { class: "data-table",
-            thead { tr { th { "Mesure" } th { "xᵢ (°C)" } th { "xᵢ²" } }}
+            thead { tr { th { "Mesure" } th { MathInline { tex: r"x_i\;(°\mathrm{{C}})" } } th { MathInline { tex: r"x_i^2" } } }}
             tbody {
                 tr { td { "1" } td { "38.2" } td { "1459.24" } }
                 tr { td { "2" } td { "38.6" } td { "1490.00" } }
@@ -178,11 +260,18 @@ fn MeasurementTable6() -> Element {
 pub fn Section8() -> Element {
     rsx! {
         SectionWrap { number: "§ 8", title: "Synthèse — ce que la structure révèle",
-            p { "La conjugaison dans les familles exponentielles n\u{2019}est pas une coïncidence algébrique : c\u{2019}est une conséquence directe du théorème de suffisance. La vraisemblance ne dépend des données qu\u{2019}à travers ", MathInline { "T(x)" }, " ; le prior conjugué a ", em { "la même dépendance fonctionnelle" }, " en ", MathInline { "η" }, " via ", MathInline { "A(η)" }, "." }
+            p {
+                "La conjugaison dans les familles exponentielles n\u{2019}est pas une coïncidence algébrique : c\u{2019}est une conséquence directe du théorème de suffisance. La vraisemblance ne dépend des données qu\u{2019}à travers ",
+                MathInline { tex: r"T(x)" },
+                " ; le prior conjugué a ", em { "la même dépendance fonctionnelle" },
+                " en ", MathInline { tex: r"\boldsymbol{{\eta}}" },
+                " via ", MathInline { tex: r"A(\boldsymbol{{\eta}})" }, "."
+            }
             DataTable8 {}
             Callout {
                 strong { "Le résultat le plus profond. " }
-                "Dans la limite ", MathInline { "ν₀ → 0" }, " (prior non-informatif), les estimateurs bayésiens convergent vers les estimateurs du maximum de vraisemblance — le fréquentisme émerge comme cas limite du bayésien. La structure des familles exponentielles rend cette convergence transparente."
+                "Dans la limite ", MathInline { tex: r"\nu_0 \to 0" },
+                " (prior non-informatif), les estimateurs bayésiens convergent vers les estimateurs du maximum de vraisemblance — le fréquentisme émerge comme cas limite du bayésien."
             }
         }
     }
@@ -194,12 +283,12 @@ fn DataTable8() -> Element {
         table { class: "data-table",
             thead { tr { th { "Objet" } th { "Rôle" } th { "Intuition" } }}
             tbody {
-                tr { td { MathInline { "T(x)" } } td { "Statistique suffisante" } td { "Ce que x apprend sur η" } }
-                tr { td { MathInline { "A(η)" } } td { "Log-partition" } td { "Géométrie de la famille" } }
-                tr { td { MathInline { "λ" } } td { "Mémoire accumulée" } td { "Urne de statistiques suffisantes" } }
-                tr { td { MathInline { "ν" } } td { "Poids de la mémoire" } td { "Compteur d\u{2019}observations" } }
-                tr { td { MathInline { "λ/ν" } } td { "Estimateur courant" } td { "Moyenne de l\u{2019}urne (shrinkage)" } }
-                tr { td { MathInline { "λₙ = λ₀ + Σ T(xᵢ)" } } td { "Mise à jour bayésienne" } td { "Deux additions, c\u{2019}est tout" } }
+                tr { td { MathInline { tex: r"T(x)" } } td { "Statistique suffisante" } td { "Ce que x apprend sur η" } }
+                tr { td { MathInline { tex: r"A(\boldsymbol{{\eta}})" } } td { "Log-partition" } td { "Géométrie de la famille" } }
+                tr { td { MathInline { tex: r"\boldsymbol{{\lambda}}" } } td { "Mémoire accumulée" } td { "Urne de statistiques suffisantes" } }
+                tr { td { MathInline { tex: r"\nu" } } td { "Poids de la mémoire" } td { "Compteur d\u{2019}observations" } }
+                tr { td { MathInline { tex: r"\boldsymbol{{\lambda}}/\nu" } } td { "Estimateur courant" } td { "Moyenne de l\u{2019}urne (shrinkage)" } }
+                tr { td { MathInline { tex: r"\boldsymbol{{\lambda}}_n = \boldsymbol{{\lambda}}_0 + \sum T(x_i)" } } td { "Mise à jour" } td { "Deux additions" } }
             }
         }
     }

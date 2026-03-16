@@ -24,6 +24,12 @@ fn main() {
 fn App() -> Element {
     rsx! {
         document::Stylesheet { href: STYLE }
+        document::Link {
+            rel: "stylesheet",
+            href: "https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css",
+        }
+        script { src: "https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js" }
+        script { src: "https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js" }
         div { class: "page",
             ChapterHeader {}
             Section1 {}
